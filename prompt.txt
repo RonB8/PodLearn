@@ -1,0 +1,95 @@
+# Build prompt: Podcast English-learning Android app
+
+You are building an Android app that helps non-native speakers learn English while listening to podcasts. Read the full spec below before writing any code, and ask clarifying questions if something is genuinely ambiguous rather than guessing.
+
+## Core concept
+
+The user listens to English-language podcasts inside the app. When they hear a word or sentence they don't understand, instead of pausing to look something up manually, they perform a simple gesture: **press pause, then press play again within ~2 seconds**. This "quick pause-resume" is detected as a trigger, and the app shows a translation of the relevant content from what was just spoken — without breaking the listening flow.
+
+## 1. Podcast source: RSS feeds only
+
+- Do **not** implement YouTube import. Downloading audio from YouTube outside their official offline feature violates their Terms of Service — this is a hard constraint, not a technical limitation to work around.
+- Users add podcasts by pasting an RSS feed URL, or by searching via a public podcast directory API (e.g. Podcast Index API or iTunes Search API) which resolves to RSS feeds.
+- Each RSS `<enclosure>` gives a direct URL to the episode's mp3 file. Download this file (or stream it) for both playback and the preprocessing step below.
+- Also support manual mp3 upload as a fallback for episodes not in RSS feeds the user has access to.
+
+## 2. Preprocessing pipeline (runs before playback starts)
+
+Before the user starts listening to a given episode:
+
+1. Download the full episode mp3.
+2. Run it through a speech-to-text service that returns **word-level timestamps** (e.g. Whisper API, or an equivalent). Do not do this in real time during playback — do it once, upfront, and cache the result.
+3. Group the word-level output into sentences (using punctuation/pause boundaries from the STT output).
+4. Store the result as a data structure sorted by time: a flat, time-sorted array of words (each with `word`, `start_time`, `end_time`, `sentence_id`), plus a sentence table (`sentence_id`, `start_time`, `end_time`, `full_text`, `word_ids[]`).
+5. Cache this transcript locally (e.g. in a local DB) keyed by episode ID, so re-listening to an episode doesn't re-run STT.
+
+Show a loading/progress state to the user while this preprocessing runs for a new episode (it can take a while depending on episode length).
+
+## 3. Trigger detection (pause → quick resume)
+
+- Track the timestamp of every `pause` event.
+- If `play` is pressed again within a configurable threshold (default 2 seconds) of the last `pause`, fire a `TranslationTriggered(pause_time: T)` event.
+- Also track the timestamp of the previous trigger and which `sentence_id` it resolved to (see below) — this is needed for the difficulty-tier logic in section 5.
+
+## 4. Sentence identification algorithm
+
+Given a trigger at real pause-time `T`, find the sentence the user actually meant (which may be the sentence playing when they paused, or the *previous* sentence, if they paused just after a new one began — see the reasoning below).
+
+**Step 1 — apply a reaction-time offset.**
+Compute `T_effective = T - reaction_delay`. Default `reaction_delay` ≈ 0.7 seconds (there's a natural lag between hearing a confusing word and pressing pause). This should be a per-user, calibratable value — see the correction UI in section 6.
+
+**Step 2 — binary search on the word-level array.**
+Binary search the time-sorted word array for the last word whose `start_time <= T_effective`. That word's `sentence_id` identifies the resolved sentence.
+
+**Step 3 — edge case: large silence gaps.**
+If the nearest word to `T_effective` is more than ~4–5 seconds away (e.g. the pause landed in an ad break or between episode segments), don't guess — return a "no relevant sentence found" result and let the UI show a neutral message instead of a wrong translation.
+
+Implement this as a pure, testable function — it should not depend on UI state, so it can be unit tested against constructed timelines (e.g. the exact "1:23 vs 1:29" scenario used to design it).
+
+## 5. Two translation modes (user-configurable in settings)
+
+The user picks one mode per their preference (a global setting, changeable anytime):
+
+**Mode A — full sentence translation.**
+On trigger, show the full resolved sentence's original text plus its translation.
+
+**Mode B — progressive difficulty-tiered word translation.**
+- The app maintains a word-difficulty lookup table, words classified into N difficulty tiers (N is configurable — don't hardcode 6; make it a constant/config value, default e.g. 6, but build it so changing to 10 or 20 requires no logic changes, only more buckets).
+- Build the tiers from word frequency data (e.g. a corpus like COCA) bucketed into N ranked tiers, optionally combined with CEFR level data if available. **Lemmatize words before lookup** (map inflected forms to their dictionary base form) so conjugations/plurals resolve to the right entry.
+- On the first trigger for a given sentence, show translations only for words at the *hardest* tier present in that sentence.
+- Compare the resolved `sentence_id` to the previous trigger's `sentence_id`:
+  - **Same sentence** → this is a repeat request for more help. Reveal the next-easier tier's words as well (cumulative — don't hide previously revealed words).
+  - **Different sentence** → reset: show only the hardest tier for the new sentence.
+- If all tiers for a sentence have already been revealed and the user triggers again on the same sentence, either loop back to showing nothing new with a subtle "all difficult words shown" indicator, or offer a one-tap "translate full sentence" fallback — your call, but don't silently no-op.
+
+## 6. Playback & correction UI
+
+- After showing a translation (either mode), automatically rewind playback by a few seconds (configurable, default ~3s) before resuming, so the user re-hears the sentence with the new context.
+- While the translation overlay is shown, let the user swipe/tap to move the resolved sentence one step earlier or later (previous/next sentence) in case the algorithm guessed wrong. Use these corrections as calibration signal to adjust that user's personal `reaction_delay` over time (e.g. a simple running average toward the offset that would have produced the correct sentence).
+- Keep the overlay lightweight and non-blocking — this is meant to preserve listening flow, not interrupt it with a heavy modal.
+
+## 7. Optional (build after MVP works end-to-end)
+
+- Save every translated word to a personal vocabulary list with spaced-repetition review (flashcards).
+- Track which words a user has seen enough times to stop flagging as "difficult" for them personally (adaptive difficulty per user, on top of the base frequency tiers).
+
+## Tech constraints & preferences
+
+- Target platform: Android.
+- Suggest Kotlin + Jetpack Compose unless you have a strong reason to propose otherwise — state the reasoning if you deviate.
+- All in-code comments, variable/function names, and commit messages: **English**.
+- Local caching (transcripts, difficulty word lists, user vocabulary) should work offline once an episode has been preprocessed once — only the initial STT call and podcast search require network.
+- Structure the sentence-identification logic (section 4) as an isolated, unit-testable module — it's the algorithmic core of the app and needs test coverage independent of Android UI code.
+
+## What to deliver first (MVP scope)
+
+Before building the full feature set, get this thin vertical slice working end-to-end:
+1. Add a podcast via RSS URL, list episodes.
+2. Download one episode, run STT preprocessing, cache the transcript.
+3. Play the episode with a basic player UI.
+4. Detect the pause→quick-resume trigger.
+5. Run the sentence identification algorithm and show the resolved sentence's plain text (no translation yet, no tiers) as a sanity check that timing resolution works correctly.
+
+Only after that loop is verified working should translation (Google Translate API or similar), difficulty tiers, and the correction/calibration UI be layered on.
+
+If any part of this spec is unclear or you think a different technical approach would clearly work better, ask before implementing — don't silently substitute your own design for a part that's specified above.

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdftotext \"American_Oxford_5000.pdf\" ox5000_raw.txt)",
+      "Bash(cp \"/c/Users/pc/AppData/Local/Temp/claude/C--Users-pc-OneDrive---Open-University-of-Israel-Projects-Android-PodLearn/23fbffd2-793f-4238-98d8-f07ce4d48b72/scratchpad/parse_oxford.py\" .)",
+      "Bash(python3 parse_oxford.py)",
+      "Bash(cp Oxford/oxford_word_levels.txt app/src/main/assets/oxford_word_levels.txt)",
+      "Bash(mv Oxford/parse_oxford.py __TRACKED_VAR__/parse_oxford_backup.py)",
+      "Bash(cp Oxford/parse_oxford.py \"/c/Users/pc/AppData/Local/Temp/claude/C--Users-pc-OneDrive---Open-University-of-Israel-Projects-Android-PodLearn/23fbffd2-793f-4238-98d8-f07ce4d48b72/scratchpad/parse_oxford_final.py\")",
+      "Bash(rm -f Oxford/ox3000.txt Oxford/ox5000.txt Oxford/ox3000_raw.txt Oxford/ox5000_raw.txt Oxford/oxford_word_levels.txt Oxford/parse_oxford.py)"
+    ]
+  }
+}

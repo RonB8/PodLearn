@@ -1,0 +1,79 @@
+package com.example.podlearn.player
+
+import android.os.SystemClock
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionResult
+import com.example.podlearn.config.AppDefaults
+import com.example.podlearn.core.TriggerDetector
+import com.example.podlearn.core.TriggerResult
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+
+/**
+ * Hosts the single ExoPlayer instance and its [MediaSession] so playback keeps running (and stays
+ * controllable from the notification shade / lock screen, like Spotify or YouTube Music) even
+ * when [com.example.podlearn.MainActivity] isn't in the foreground. [PlayerController] never
+ * touches [ExoPlayer] directly - it talks to this service through a [androidx.media3.session.MediaController].
+ *
+ * Trigger detection (spec section 3) lives here rather than in [PlayerController], because a
+ * play/pause request can arrive from the notification or lock screen just as easily as from the
+ * in-app button - both route through [MediaSession.Callback.onPlayerCommandRequest] below, so
+ * detecting the gesture here is what makes it work from every surface.
+ */
+@AndroidEntryPoint
+class PlaybackService : MediaSessionService() {
+
+    @Inject
+    lateinit var triggerEventBus: TriggerEventBus
+
+    private var mediaSession: MediaSession? = null
+    private val triggerDetector = TriggerDetector(thresholdMs = AppDefaults.PAUSE_THRESHOLD_MS)
+
+    override fun onCreate() {
+        super.onCreate()
+        val player = ExoPlayer.Builder(this).build()
+        mediaSession = MediaSession.Builder(this, player)
+            .setCallback(TriggerAwareCallback())
+            .build()
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+
+    override fun onDestroy() {
+        mediaSession?.run {
+            player.release()
+            release()
+            mediaSession = null
+        }
+        super.onDestroy()
+    }
+
+    private inner class TriggerAwareCallback : MediaSession.Callback {
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (playerCommand != Player.COMMAND_PLAY_PAUSE) return SessionResult.RESULT_SUCCESS
+            val player = session.player
+
+            if (player.isPlaying) {
+                triggerDetector.onPause(SystemClock.elapsedRealtime(), player.currentPosition)
+                return SessionResult.RESULT_SUCCESS
+            }
+
+            return when (val result = triggerDetector.onResume(SystemClock.elapsedRealtime())) {
+                is TriggerResult.Triggered -> {
+                    triggerEventBus.emit(result)
+                    // Reject the play - stays paused until PlayerViewModel resumes it once the
+                    // trigger's Hebrew narration finishes.
+                    SessionResult.RESULT_INFO_SKIPPED
+                }
+                TriggerResult.NotTriggered -> SessionResult.RESULT_SUCCESS
+            }
+        }
+    }
+}
