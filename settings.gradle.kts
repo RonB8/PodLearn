@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PodLearn"
+rootProject.name = "PodLingo"
 include(":app")
 include(":core-logic")
  

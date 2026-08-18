@@ -16,13 +16,13 @@ val localProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.podlearn"
+    namespace = "com.example.podlingo"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.podlearn"
+        applicationId = "com.example.podlingo"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
