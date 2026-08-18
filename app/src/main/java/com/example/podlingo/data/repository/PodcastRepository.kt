@@ -11,11 +11,11 @@ import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 class PodcastRepository @Inject constructor(
-    private val okHttpClient: OkHttpClient,
+    private val callFactory: Call.Factory,
     private val podcastDao: PodcastDao,
     private val episodeDao: EpisodeDao,
 ) {
@@ -24,7 +24,7 @@ class PodcastRepository @Inject constructor(
     suspend fun addPodcastByRssUrl(feedUrl: String): Result<PodcastEntity> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(feedUrl).build()
-            val feed = okHttpClient.newCall(request).execute().use { response ->
+            val feed = callFactory.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("Failed to fetch feed: HTTP ${response.code}"))
                 }
@@ -64,6 +64,8 @@ class PodcastRepository @Inject constructor(
     }
 
     fun getPodcasts(): Flow<List<PodcastEntity>> = podcastDao.getAll()
+
+    suspend fun getByFeedUrl(feedUrl: String): PodcastEntity? = podcastDao.getByFeedUrl(feedUrl)
 
     fun getEpisodes(podcastId: String): Flow<List<EpisodeEntity>> = episodeDao.getByPodcast(podcastId)
 

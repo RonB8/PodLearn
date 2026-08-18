@@ -1,8 +1,11 @@
 package com.example.podlingo.di
 
 import com.example.podlingo.BuildConfig
+import com.example.podlingo.data.remote.podcastsearch.PodcastSearchApi
 import com.example.podlingo.data.remote.translation.TranslationApi
 import com.example.podlingo.data.remote.whisper.WhisperApi
+import com.example.podlingo.data.repository.PodcastSearchRepository
+import com.example.podlingo.data.repository.PodcastSearchRepositoryImpl
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,6 +23,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 object NetworkModule {
 
     private const val OPENAI_BASE_URL = "https://api.openai.com/v1/"
+    private const val ITUNES_BASE_URL = "https://itunes.apple.com/"
 
     @Provides
     @Singleton
@@ -32,6 +36,15 @@ object NetworkModule {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * Exposes the plain client via [Call.Factory] rather than [OkHttpClient] for consumers (like
+     * [com.example.podlingo.data.repository.PodcastRepository]) that only need to place calls -
+     * lets tests substitute a fake factory without spinning up a real HTTP client.
+     */
+    @Provides
+    @Singleton
+    fun provideCallFactory(client: OkHttpClient): okhttp3.Call.Factory = client
 
     /** Client used for Whisper calls: carries the OpenAI auth header and allows for long uploads/transcriptions. */
     @Provides
@@ -69,4 +82,20 @@ object NetworkModule {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(TranslationApi::class.java)
+
+    /** iTunes's search endpoint needs no auth; shares the plain client used for RSS feed fetches. */
+    @Provides
+    @Singleton
+    fun providePodcastSearchApi(client: OkHttpClient, json: Json): PodcastSearchApi =
+        Retrofit.Builder()
+            .baseUrl(ITUNES_BASE_URL)
+            .client(client)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(PodcastSearchApi::class.java)
+
+    @Provides
+    @Singleton
+    fun providePodcastSearchRepository(api: PodcastSearchApi): PodcastSearchRepository =
+        PodcastSearchRepositoryImpl(api)
 }
