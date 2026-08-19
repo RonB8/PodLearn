@@ -113,6 +113,13 @@ class PlayerViewModel @Inject constructor(
 
     fun setPlaybackSpeed(speed: Float) = playerController.setPlaybackSpeed(speed)
 
+    fun toggleTranscript() {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(transcriptVisible = !current.transcriptVisible)
+        }
+    }
+
     fun seekTo(positionMs: Long) = playerController.seekTo(positionMs)
 
     fun dismissSentenceOverlay() {
@@ -125,6 +132,8 @@ class PlayerViewModel @Inject constructor(
                     translatedSentenceText = null,
                     isTranslating = false,
                     noRelevantSentence = false,
+                    activeSentenceId = null,
+                    activeWord = null,
                 )
             } else {
                 current
@@ -160,17 +169,26 @@ class PlayerViewModel @Inject constructor(
         val podcastEpisodes = podcastRepository.getEpisodes(episode.podcastId).first()
         val currentIndex = podcastEpisodes.indexOfFirst { it.id == episode.id }
         nextEpisodeId = if (currentIndex == -1) null else podcastEpisodes.getOrNull(currentIndex + 1)?.id
+        val words = transcriptRepository.getWordTimings(episode.id).also { cachedWords = it }
+        val sentences = transcriptRepository.getSentences(episode.id)
         _uiState.value = PlayerScreenState.Ready(
             episodeId = episode.id,
             episodeTitle = episode.title,
             player = playerController.playerState.value,
             artworkUrl = artworkUrl,
             hasNextEpisode = nextEpisodeId != null,
+            sentences = sentences,
+            words = words,
         )
         podcastRepository.recordEpisodePlayed(episode.id)
     }
 
     private fun handleTrigger(pauseTimeMs: Long) {
+        // A trigger firing means there's a translation to show - surface it in the transcript
+        // (covering the upcoming sentences) rather than relying on the user having it open already.
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
+        }
         viewModelScope.launch {
             val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
             when (val resolution = SentenceResolver.resolve(pauseTimeMs, AppDefaults.REACTION_DELAY_MS, words)) {
@@ -184,6 +202,8 @@ class PlayerViewModel @Inject constructor(
                                     translatedSentenceText = null,
                                     isTranslating = false,
                                     noRelevantSentence = true,
+                                    activeSentenceId = null,
+                                    activeWord = null,
                                 )
                             } else {
                                 current
@@ -205,6 +225,8 @@ class PlayerViewModel @Inject constructor(
                                 translatedSentenceText = null,
                                 isTranslating = true,
                                 noRelevantSentence = false,
+                                activeSentenceId = sentence.id,
+                                activeWord = null,
                             )
                         }
                         translateAndSpeak(sentence.fullText)
@@ -218,6 +240,8 @@ class PlayerViewModel @Inject constructor(
                                 translatedSentenceText = null,
                                 isTranslating = false,
                                 noRelevantSentence = true,
+                                activeSentenceId = null,
+                                activeWord = null,
                             )
                         } else {
                             current
@@ -260,6 +284,8 @@ class PlayerViewModel @Inject constructor(
                 translatedSentenceText = null,
                 isTranslating = true,
                 noRelevantSentence = false,
+                activeSentenceId = sentenceId,
+                activeWord = targetWord,
             )
         }
         translateAndSpeak(targetWord, speakEnglishFirst = true)

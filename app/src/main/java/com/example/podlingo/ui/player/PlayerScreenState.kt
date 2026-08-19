@@ -1,5 +1,7 @@
 package com.example.podlingo.ui.player
 
+import com.example.podlingo.core.WordTiming
+import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
 
@@ -21,6 +23,13 @@ sealed interface PlayerScreenState {
         val translatedSentenceText: String? = null,
         val isTranslating: Boolean = false,
         val noRelevantSentence: Boolean = false,
+        val sentences: List<SentenceEntity> = emptyList(),
+        val words: List<WordTiming> = emptyList(),
+        val transcriptVisible: Boolean = false,
+        /** The sentence currently being read aloud by a trigger (translation overlay), if any. */
+        val activeSentenceId: String? = null,
+        /** Hard-word mode's specific target word within [activeSentenceId], if that's the active trigger. */
+        val activeWord: String? = null,
     ) : PlayerScreenState
 
     data class Failed(val message: String, val episodeTitle: String? = null) : PlayerScreenState

@@ -16,11 +16,17 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
@@ -34,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -54,15 +61,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.podlingo.config.AppDefaults
+import com.example.podlingo.core.WordTiming
+import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
@@ -118,6 +133,7 @@ fun PlayerScreen(
                     onSeek = viewModel::seekTo,
                     onDismissOverlay = viewModel::dismissSentenceOverlay,
                     onSwipeDownDismiss = onBack,
+                    onToggleTranscript = viewModel::toggleTranscript,
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message)
             }
@@ -187,15 +203,32 @@ private fun ReadyPlayerView(
     onSeek: (Long) -> Unit,
     onDismissOverlay: () -> Unit,
     onSwipeDownDismiss: () -> Unit,
+    onToggleTranscript: () -> Unit,
 ) {
+    val wordsBySentence = remember(state.words) { state.words.groupBy { it.sentenceId } }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            EpisodeArtwork(artworkUrl = state.artworkUrl, onSwipeDownDismiss = onSwipeDownDismiss)
+            EpisodeArtwork(
+                artworkUrl = state.artworkUrl,
+                transcriptVisible = state.transcriptVisible,
+                sentences = state.sentences,
+                wordsBySentence = wordsBySentence,
+                positionMs = state.player.positionMs,
+                activeSentenceId = state.activeSentenceId,
+                activeWord = state.activeWord,
+                isTranslating = state.isTranslating,
+                translatedSentenceText = state.translatedSentenceText,
+                onDismissOverlay = onDismissOverlay,
+                onSwipeDownDismiss = onSwipeDownDismiss,
+            )
         }
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        TranscriptButtonRow(transcriptVisible = state.transcriptVisible, onToggleTranscript = onToggleTranscript)
+        Spacer(modifier = Modifier.height(20.dp))
         PlaybackControls(
             player = state.player,
             hasNextEpisode = state.hasNextEpisode,
@@ -207,16 +240,13 @@ private fun ReadyPlayerView(
             onSeek = onSeek,
         )
 
-        val showOverlay = state.resolvedSentenceText != null || state.noRelevantSentence
-        AnimatedVisibility(visible = showOverlay) {
+        // The translation itself now lives inside the transcript overlay (see TranslationPanel) -
+        // this banner only covers the edge case where no sentence lines up with the pause at all,
+        // since there's no sentence in the transcript to attach that message to.
+        AnimatedVisibility(visible = state.noRelevantSentence) {
             Column {
                 Spacer(modifier = Modifier.height(16.dp))
-                SentenceOverlay(
-                    text = state.resolvedSentenceText,
-                    translatedText = state.translatedSentenceText,
-                    isTranslating = state.isTranslating,
-                    onDismiss = onDismissOverlay,
-                )
+                NoRelevantSentenceBanner(onDismiss = onDismissOverlay)
             }
         }
     }
@@ -229,7 +259,19 @@ private fun ReadyPlayerView(
  * standard in media players like Spotify.
  */
 @Composable
-private fun EpisodeArtwork(artworkUrl: String?, onSwipeDownDismiss: () -> Unit) {
+private fun EpisodeArtwork(
+    artworkUrl: String?,
+    transcriptVisible: Boolean,
+    sentences: List<SentenceEntity>,
+    wordsBySentence: Map<String, List<WordTiming>>,
+    positionMs: Long,
+    activeSentenceId: String?,
+    activeWord: String?,
+    isTranslating: Boolean,
+    translatedSentenceText: String?,
+    onDismissOverlay: () -> Unit,
+    onSwipeDownDismiss: () -> Unit,
+) {
     val dismissThresholdPx = with(LocalDensity.current) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
     var accumulatedDrag by remember { mutableStateOf(0f) }
 
@@ -238,14 +280,22 @@ private fun EpisodeArtwork(artworkUrl: String?, onSwipeDownDismiss: () -> Unit) 
             .aspectRatio(1f, matchHeightConstraintsFirst = true)
             .clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .draggable(
-                orientation = Orientation.Vertical,
-                state = rememberDraggableState { delta -> accumulatedDrag += delta },
-                onDragStopped = {
-                    if (accumulatedDrag > dismissThresholdPx) onSwipeDownDismiss()
-                    accumulatedDrag = 0f
-                },
-            ),
+            // Swiping to scroll the transcript and swiping to dismiss both read vertical drags on
+            // this same box, so the dismiss gesture only listens while the transcript is hidden.
+            .let { base ->
+                if (transcriptVisible) {
+                    base
+                } else {
+                    base.draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta -> accumulatedDrag += delta },
+                        onDragStopped = {
+                            if (accumulatedDrag > dismissThresholdPx) onSwipeDownDismiss()
+                            accumulatedDrag = 0f
+                        },
+                    )
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         // Kept underneath as a fallback: shows through if there's no artwork, or it fails to load.
@@ -262,6 +312,203 @@ private fun EpisodeArtwork(artworkUrl: String?, onSwipeDownDismiss: () -> Unit) 
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
+        }
+        AnimatedVisibility(visible = transcriptVisible, modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.68f)),
+            ) {
+                TranscriptView(
+                    sentences = sentences,
+                    wordsBySentence = wordsBySentence,
+                    positionMs = positionMs,
+                    activeSentenceId = activeSentenceId,
+                    activeWord = activeWord,
+                    isTranslating = isTranslating,
+                    translatedSentenceText = translatedSentenceText,
+                    onDismissOverlay = onDismissOverlay,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TranscriptButtonRow(transcriptVisible: Boolean, onToggleTranscript: () -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            FilterChip(
+                selected = transcriptVisible,
+                onClick = onToggleTranscript,
+                label = { Text("Transcript") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.List,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+        }
+    }
+}
+
+/**
+ * Spotify-style synced transcript: while no trigger is active, the sentence/word containing the
+ * live playback position is highlighted (karaoke-style, regular bold); once a trigger fires, that
+ * takes over with a heavier bold - the whole sentence for normal mode, or just the target word for
+ * hard-word mode - and a [TranslationPanel] takes the place of the sentences after it, so the
+ * translation the user is actively hearing is never competing for attention with what's next.
+ */
+@Composable
+private fun TranscriptView(
+    sentences: List<SentenceEntity>,
+    wordsBySentence: Map<String, List<WordTiming>>,
+    positionMs: Long,
+    activeSentenceId: String?,
+    activeWord: String?,
+    isTranslating: Boolean,
+    translatedSentenceText: String?,
+    onDismissOverlay: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val highlightedSentenceId = activeSentenceId
+        ?: sentences.lastOrNull { it.startMs <= positionMs }?.id
+    val showTranslationPanel = activeSentenceId != null && (isTranslating || translatedSentenceText != null)
+    val highlightedIndex = sentences.indexOfFirst { it.id == highlightedSentenceId }
+    val visibleSentences = if (showTranslationPanel && highlightedIndex >= 0) {
+        sentences.subList(0, highlightedIndex + 1)
+    } else {
+        sentences
+    }
+
+    LaunchedEffect(highlightedSentenceId) {
+        val index = sentences.indexOfFirst { it.id == highlightedSentenceId }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        items(visibleSentences, key = { it.id }) { sentence ->
+            val isCurrentSentence = sentence.id == highlightedSentenceId
+            val words = wordsBySentence[sentence.id].orEmpty()
+            // Trigger-driven (an active translation) gets a heavier weight than plain time-based
+            // karaoke tracking, so the word/sentence actually being translated stands out from
+            // ordinary "this is where we are" highlighting.
+            val isTriggerDriven = isCurrentSentence && activeSentenceId == sentence.id
+            val boldWholeSentence = isTriggerDriven && activeWord == null
+            val highlightedWord: WordTiming? = when {
+                !isCurrentSentence -> null
+                isTriggerDriven && activeWord != null -> words.firstOrNull { wordMatchesActiveWord(it.word, activeWord) }
+                !isTriggerDriven -> words.firstOrNull { positionMs in it.startMs until it.endMs }
+                else -> null
+            }
+            Text(
+                text = buildSentenceAnnotatedString(
+                    sentence = sentence,
+                    words = words,
+                    isCurrentSentence = isCurrentSentence,
+                    boldWholeSentence = boldWholeSentence,
+                    highlightedWord = highlightedWord,
+                    highlightWeight = if (isTriggerDriven) FontWeight.Black else FontWeight.Bold,
+                ),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+
+        if (showTranslationPanel) {
+            item(key = "translation-panel") {
+                TranslationPanel(
+                    isTranslating = isTranslating,
+                    translatedText = translatedSentenceText,
+                    onDismiss = onDismissOverlay,
+                )
+            }
+        }
+    }
+}
+
+/** [activeWord] (from hard-word mode) is punctuation-trimmed but not lowercased, so match loosely. */
+private fun wordMatchesActiveWord(rawWord: String, activeWord: String): Boolean {
+    val trimmed = rawWord.trim { c -> !c.isLetterOrDigit() && c != '\'' && c != '-' }
+    return trimmed.equals(activeWord, ignoreCase = true)
+}
+
+private fun buildSentenceAnnotatedString(
+    sentence: SentenceEntity,
+    words: List<WordTiming>,
+    isCurrentSentence: Boolean,
+    boldWholeSentence: Boolean,
+    highlightedWord: WordTiming?,
+    highlightWeight: FontWeight,
+): AnnotatedString {
+    val alpha = if (isCurrentSentence) 1f else 0.45f
+    return buildAnnotatedString {
+        if (words.isEmpty()) {
+            withStyle(SpanStyle(color = Color.White.copy(alpha = alpha))) { append(sentence.fullText) }
+            return@buildAnnotatedString
+        }
+        words.forEachIndexed { index, word ->
+            // Reference equality (not text equality) so a repeated word elsewhere in the sentence
+            // never gets bolded by mistake.
+            val isHighlighted = boldWholeSentence || word === highlightedWord
+            withStyle(
+                SpanStyle(
+                    color = Color.White.copy(alpha = alpha),
+                    fontWeight = if (isHighlighted) highlightWeight else FontWeight.Normal,
+                ),
+            ) {
+                append(word.word)
+            }
+            if (index != words.lastIndex) append(" ")
+        }
+    }
+}
+
+/**
+ * Replaces the transcript's upcoming sentences while a trigger's translation is active - it's
+ * deliberately opaque (not just a scrim) so it reads as "this is what you're hearing right now",
+ * covering rather than competing with what comes next in the episode.
+ */
+@Composable
+private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 220.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.94f))
+            .padding(20.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = Color.White)
+            }
+        }
+        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            if (translatedText != null) {
+                Text(
+                    text = translatedText,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Text(
+                    text = "Translating…",
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -374,12 +621,7 @@ private fun SkipButton(seconds: Long, isForward: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SentenceOverlay(
-    text: String?,
-    translatedText: String?,
-    isTranslating: Boolean,
-    onDismiss: () -> Unit,
-) {
+private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -389,29 +631,11 @@ private fun SentenceOverlay(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (text != null) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = text, style = MaterialTheme.typography.bodyLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    when {
-                        translatedText != null -> Text(
-                            text = translatedText,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        isTranslating -> Text(
-                            text = "Translating…",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    text = "No relevant sentence found (that pause looks like it fell in a quiet stretch).",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            Text(
+                text = "No relevant sentence found (that pause looks like it fell in a quiet stretch).",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Dismiss")
             }

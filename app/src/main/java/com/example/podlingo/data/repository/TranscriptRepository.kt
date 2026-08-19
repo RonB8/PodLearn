@@ -92,6 +92,8 @@ class TranscriptRepository @Inject constructor(
 
     suspend fun getSentence(sentenceId: String): SentenceEntity? = transcriptDao.getSentence(sentenceId)
 
+    suspend fun getSentences(episodeId: String): List<SentenceEntity> = transcriptDao.getSentencesForEpisode(episodeId)
+
     private fun resolveLocalFile(episode: EpisodeEntity): File {
         episode.localFilePath?.let { path ->
             val existing = File(path)
