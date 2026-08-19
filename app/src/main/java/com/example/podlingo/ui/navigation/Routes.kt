@@ -1,13 +1,11 @@
 package com.example.podlingo.ui.navigation
 
 object Routes {
-    const val PODCASTS = "podcasts"
-    const val ADD_PODCAST = "addPodcast"
+    /** The Home/Search/Library tabbed shell - the app's start destination. */
+    const val MAIN = "main"
     const val EPISODES = "episodes/{podcastId}"
     const val PLAYER = "player/{episodeId}"
     const val SETTINGS = "settings"
-    const val HISTORY = "history"
-    const val PLAYLISTS = "playlists"
     const val PLAYLIST_DETAIL = "playlist/{playlistId}"
 
     fun episodes(podcastId: String) = "episodes/$podcastId"

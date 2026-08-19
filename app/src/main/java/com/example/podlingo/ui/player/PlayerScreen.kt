@@ -96,10 +96,6 @@ fun PlayerScreen(
                 },
                 actions = {
                     if (readyState != null) {
-                        SpeedButton(
-                            currentSpeed = readyState.player.playbackSpeed,
-                            onSpeedSelected = viewModel::setPlaybackSpeed,
-                        )
                         IconButton(onClick = { showAddToPlaylist = true }) {
                             Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
                         }
@@ -118,6 +114,7 @@ fun PlayerScreen(
                     onSkipBackward = viewModel::skipBackward,
                     onSkipForward = viewModel::skipForward,
                     onSkipToNextEpisode = viewModel::skipToNextEpisode,
+                    onSpeedSelected = viewModel::setPlaybackSpeed,
                     onSeek = viewModel::seekTo,
                     onDismissOverlay = viewModel::dismissSentenceOverlay,
                     onSwipeDownDismiss = onBack,
@@ -186,6 +183,7 @@ private fun ReadyPlayerView(
     onSkipBackward: () -> Unit,
     onSkipForward: () -> Unit,
     onSkipToNextEpisode: () -> Unit,
+    onSpeedSelected: (Float) -> Unit,
     onSeek: (Long) -> Unit,
     onDismissOverlay: () -> Unit,
     onSwipeDownDismiss: () -> Unit,
@@ -205,6 +203,7 @@ private fun ReadyPlayerView(
             onSkipBackward = onSkipBackward,
             onSkipForward = onSkipForward,
             onSkipToNextEpisode = onSkipToNextEpisode,
+            onSpeedSelected = onSpeedSelected,
             onSeek = onSeek,
         )
 
@@ -275,6 +274,7 @@ private fun PlaybackControls(
     onSkipBackward: () -> Unit,
     onSkipForward: () -> Unit,
     onSkipToNextEpisode: () -> Unit,
+    onSpeedSelected: (Float) -> Unit,
     onSeek: (Long) -> Unit,
 ) {
     var isDragging by remember { mutableStateOf(false) }
@@ -331,6 +331,12 @@ private fun PlaybackControls(
 
             SkipButton(seconds = AppDefaults.SEEK_STEP_MS / 1000, isForward = true, onClick = onSkipForward)
         }
+
+        SpeedButton(
+            currentSpeed = player.playbackSpeed,
+            onSpeedSelected = onSpeedSelected,
+            modifier = Modifier.align(Alignment.CenterStart),
+        )
 
         if (hasNextEpisode) {
             IconButton(
@@ -414,9 +420,9 @@ private fun SentenceOverlay(
 }
 
 @Composable
-private fun SpeedButton(currentSpeed: Float, onSpeedSelected: (Float) -> Unit) {
+private fun SpeedButton(currentSpeed: Float, onSpeedSelected: (Float) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
+    Box(modifier = modifier) {
         TextButton(onClick = { expanded = true }) {
             Text(formatSpeed(currentSpeed))
         }

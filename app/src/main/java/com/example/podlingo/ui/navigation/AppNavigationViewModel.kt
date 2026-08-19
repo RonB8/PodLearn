@@ -16,8 +16,13 @@ class AppNavigationViewModel @Inject constructor(
 ) : ViewModel() {
 
     val lastRoute: String? = settingsRepository.lastRoute
+    val lastTabIndex: Int = settingsRepository.lastTabIndex
 
     fun rememberRoute(route: String) {
         settingsRepository.lastRoute = route
+    }
+
+    fun rememberTabIndex(index: Int) {
+        settingsRepository.lastTabIndex = index
     }
 }

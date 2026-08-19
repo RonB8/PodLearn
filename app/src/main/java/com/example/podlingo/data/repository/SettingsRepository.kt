@@ -46,10 +46,18 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
             prefs.edit().putString(KEY_LAST_ROUTE, value).apply()
         }
 
+    /** Which of the Home/Search/Library tabs was showing, restored on a cold start alongside [lastRoute]. */
+    var lastTabIndex: Int
+        get() = prefs.getInt(KEY_LAST_TAB_INDEX, 0)
+        set(value) {
+            prefs.edit().putInt(KEY_LAST_TAB_INDEX, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "podlingo_settings"
         private const val KEY_HARD_WORD_MODE = "hard_word_mode_enabled"
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
         private const val KEY_LAST_ROUTE = "last_route"
+        private const val KEY_LAST_TAB_INDEX = "last_tab_index"
     }
 }
