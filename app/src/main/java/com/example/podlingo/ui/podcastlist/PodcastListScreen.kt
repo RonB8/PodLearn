@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -32,6 +34,8 @@ fun PodcastListScreen(
     onAddPodcast: () -> Unit,
     onOpenPodcast: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenPlaylists: () -> Unit,
     viewModel: PodcastListViewModel = hiltViewModel(),
 ) {
     val podcasts by viewModel.podcasts.collectAsStateWithLifecycle()
@@ -41,6 +45,12 @@ fun PodcastListScreen(
             TopAppBar(
                 title = { Text("PodLingo") },
                 actions = {
+                    IconButton(onClick = onOpenPlaylists) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = "Playlists")
+                    }
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }

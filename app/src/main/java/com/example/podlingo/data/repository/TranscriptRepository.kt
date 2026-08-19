@@ -8,7 +8,7 @@ import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.local.entity.TranscriptStatus
 import com.example.podlingo.data.local.entity.WordEntity
 import com.example.podlingo.data.remote.FileDownloader
-import com.example.podlingo.data.remote.whisper.WhisperApi
+import com.example.podlingo.data.remote.whisper.WhisperChunkedTranscriber
 import com.example.podlingo.data.remote.whisper.WhisperErrorResponse
 import com.example.podlingo.data.remote.whisper.WhisperTranscriptionResponse
 import com.example.podlingo.core.WordTiming
@@ -23,10 +23,6 @@ import kotlin.math.roundToLong
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Orchestrates the one-time-per-episode preprocessing pipeline (spec section 2): download the
@@ -37,7 +33,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 class TranscriptRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val fileDownloader: FileDownloader,
-    private val whisperApi: WhisperApi,
+    private val chunkedTranscriber: WhisperChunkedTranscriber,
     private val episodeDao: EpisodeDao,
     private val transcriptDao: TranscriptDao,
 ) {
@@ -63,20 +59,12 @@ class TranscriptRepository @Inject constructor(
             episodeDao.updateLocalFilePath(episode.id, localFile.absolutePath)
         }
 
-        if (localFile.length() > MAX_WHISPER_FILE_BYTES) {
-            val sizeMb = localFile.length() / 1_000_000
-            failEpisode(
-                episode.id,
-                "Episode audio is ${sizeMb}MB, over the 25MB Whisper API limit. " +
-                    "Chunked upload for long episodes isn't implemented yet.",
-            )
-            return@channelFlow
-        }
-
-        send(PreprocessingProgress.Transcribing)
+        send(PreprocessingProgress.Transcribing())
         episodeDao.updateTranscriptStatus(episode.id, TranscriptStatus.TRANSCRIBING)
         val transcription = try {
-            transcribe(localFile)
+            chunkedTranscriber.transcribe(localFile) { chunkIndex, chunkCount ->
+                send(PreprocessingProgress.Transcribing(chunkIndex, chunkCount))
+            }
         } catch (e: Exception) {
             failEpisode(episode.id, describeTranscriptionError(e))
             return@channelFlow
@@ -130,16 +118,6 @@ class TranscriptRepository @Inject constructor(
         return e.message ?: "Transcription failed"
     }
 
-    private suspend fun transcribe(file: File): WhisperTranscriptionResponse {
-        val requestFile = file.asRequestBody("audio/mpeg".toMediaType())
-        val filePart = MultipartBody.Part.createFormData("file", file.name, requestFile)
-        val modelPart = "whisper-1".toRequestBody("text/plain".toMediaType())
-        val responseFormatPart = "verbose_json".toRequestBody("text/plain".toMediaType())
-        val wordGranularityPart = "word".toRequestBody("text/plain".toMediaType())
-        val segmentGranularityPart = "segment".toRequestBody("text/plain".toMediaType())
-        return whisperApi.transcribe(filePart, modelPart, responseFormatPart, wordGranularityPart, segmentGranularityPart)
-    }
-
     /**
      * Whisper's `segments` are already pause/punctuation-based chunks, so one segment = one
      * sentence row. Each word is assigned to the last segment that had started by the time the
@@ -183,7 +161,6 @@ class TranscriptRepository @Inject constructor(
     }
 
     companion object {
-        private const val MAX_WHISPER_FILE_BYTES = 25_000_000L
         private val errorJson = Json { ignoreUnknownKeys = true }
     }
 }

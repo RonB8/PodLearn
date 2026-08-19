@@ -8,8 +8,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
@@ -50,9 +53,16 @@ fun PodLingoTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    // PodLingo's content (podcast titles, media transport controls) is inherently LTR-oriented
+    // regardless of the device's system locale - a seek-back/seek-forward pair mirroring on an
+    // RTL locale is wrong (that's a spatial/temporal timeline metaphor, not a text-direction one),
+    // and it was swapping the two skip buttons' screen positions. Hebrew translation text inside
+    // still renders correctly via Unicode bidi at the glyph level; this only affects layout order.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

@@ -3,7 +3,10 @@ package com.example.podlingo.di
 import android.content.Context
 import androidx.room.Room
 import com.example.podlingo.data.local.AppDatabase
+import com.example.podlingo.data.local.MIGRATION_1_2
+import com.example.podlingo.data.local.MIGRATION_2_3
 import com.example.podlingo.data.local.dao.EpisodeDao
+import com.example.podlingo.data.local.dao.PlaylistDao
 import com.example.podlingo.data.local.dao.PodcastDao
 import com.example.podlingo.data.local.dao.TranscriptDao
 import dagger.Module
@@ -20,7 +23,9 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.DATABASE_NAME).build()
+        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .build()
 
     @Provides
     fun providePodcastDao(database: AppDatabase): PodcastDao = database.podcastDao()
@@ -30,4 +35,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTranscriptDao(database: AppDatabase): TranscriptDao = database.transcriptDao()
+
+    @Provides
+    fun providePlaylistDao(database: AppDatabase): PlaylistDao = database.playlistDao()
 }

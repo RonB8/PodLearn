@@ -2,6 +2,7 @@ package com.example.podlingo.data.repository
 
 import com.example.podlingo.data.local.dao.EpisodeDao
 import com.example.podlingo.data.local.dao.PodcastDao
+import com.example.podlingo.data.local.dao.RecentlyPlayedItem
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.PodcastEntity
 import com.example.podlingo.data.remote.rss.RssParser
@@ -65,9 +66,18 @@ class PodcastRepository @Inject constructor(
 
     fun getPodcasts(): Flow<List<PodcastEntity>> = podcastDao.getAll()
 
+    suspend fun getPodcast(podcastId: String): PodcastEntity? = podcastDao.getById(podcastId)
+
     suspend fun getByFeedUrl(feedUrl: String): PodcastEntity? = podcastDao.getByFeedUrl(feedUrl)
 
     fun getEpisodes(podcastId: String): Flow<List<EpisodeEntity>> = episodeDao.getByPodcast(podcastId)
 
     suspend fun getEpisode(episodeId: String): EpisodeEntity? = episodeDao.getById(episodeId)
+
+    /** Bumps [episodeId] to the top of the recently-played list, recording it as played now. */
+    suspend fun recordEpisodePlayed(episodeId: String) {
+        episodeDao.updateLastPlayed(episodeId, System.currentTimeMillis())
+    }
+
+    fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>> = episodeDao.getRecentlyPlayed()
 }

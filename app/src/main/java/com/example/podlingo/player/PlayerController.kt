@@ -17,17 +17,24 @@ import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 data class PlayerUiState(
+    val episodeId: String? = null,
+    val episodeTitle: String? = null,
+    val artworkUrl: String? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
+    val playbackSpeed: Float = 1f,
 )
 
 /**
@@ -36,10 +43,14 @@ data class PlayerUiState(
  * an ExoPlayer directly) is what gives us a system media notification and lock-screen transport
  * controls, matching how Spotify/YouTube Music behave. Trigger detection (spec section 3) happens
  * server-side in [PlaybackService] - see [triggerEvents] - since it must react to play/pause from
- * any source, not just this controller's own [play]/[pause] calls. One instance is owned per
- * player screen (created fresh per PlayerViewModel, released in its onCleared) - not an app-wide
- * singleton.
+ * any source, not just this controller's own [play]/[pause] calls.
+ *
+ * App-wide singleton, not per-screen: the persistent mini-player bar (shown on every screen except
+ * the full Player screen) and [com.example.podlingo.ui.player.PlayerViewModel] both observe the
+ * same connection, so leaving the Player screen must not tear it down - the whole point is that
+ * playback (and the ability to see/control it) survives navigating away.
  */
+@Singleton
 class PlayerController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val triggerEventBus: TriggerEventBus,
@@ -47,6 +58,10 @@ class PlayerController @Inject constructor(
 
     private val _playerState = MutableStateFlow(PlayerUiState())
     val playerState: StateFlow<PlayerUiState> = _playerState.asStateFlow()
+
+    /** Emits the episode id whenever playback runs to the end of that episode's audio. */
+    private val _playbackEnded = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val playbackEnded: SharedFlow<String> = _playbackEnded.asSharedFlow()
 
     val triggerEvents: SharedFlow<TriggerResult.Triggered> = triggerEventBus.events
 
@@ -70,28 +85,42 @@ class PlayerController @Inject constructor(
                     durationMs = duration,
                 )
             }
+            if (playbackState == Player.STATE_ENDED) {
+                _playerState.value.episodeId?.let { _playbackEnded.tryEmit(it) }
+            }
         }
     }
 
-    fun prepare(episodeTitle: String, localFilePath: String) {
-        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, sessionToken).buildAsync()
-        controllerFuture = future
-        future.addListener(
-            {
-                val mediaController = future.get()
-                controller = mediaController
-                mediaController.addListener(playerListener)
-                val mediaItem = MediaItem.Builder()
-                    .setUri(Uri.fromFile(File(localFilePath)))
-                    .setMediaMetadata(MediaMetadata.Builder().setTitle(episodeTitle).build())
-                    .build()
-                mediaController.setMediaItem(mediaItem)
-                mediaController.prepare()
-                mediaController.play()
-            },
-            MoreExecutors.directExecutor(),
-        )
+    /**
+     * Loads [episodeId]'s audio and starts playback - unless it's already the loaded episode
+     * (e.g. re-entering the Player screen for something mid-playback), in which case this is a
+     * no-op so playback isn't restarted from the top.
+     */
+    fun prepare(episodeId: String, episodeTitle: String, artworkUrl: String?, localFilePath: String) {
+        if (_playerState.value.episodeId == episodeId) return
+        withController { mediaController ->
+            val mediaItem = MediaItem.Builder()
+                .setUri(Uri.fromFile(File(localFilePath)))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(episodeTitle).build())
+                .build()
+            val speed = _playerState.value.playbackSpeed
+            _playerState.value = PlayerUiState(
+                episodeId = episodeId,
+                episodeTitle = episodeTitle,
+                artworkUrl = artworkUrl,
+                playbackSpeed = speed,
+            )
+            mediaController.setMediaItem(mediaItem)
+            mediaController.prepare()
+            mediaController.setPlaybackSpeed(speed)
+            mediaController.play()
+        }
+    }
+
+    /** Applies to whatever's currently loaded and carries over to the next episode too. */
+    fun setPlaybackSpeed(speed: Float) = withController { mediaController ->
+        mediaController.setPlaybackSpeed(speed)
+        _playerState.update { it.copy(playbackSpeed = speed) }
     }
 
     /**
@@ -99,42 +128,43 @@ class PlayerController @Inject constructor(
      * the underlying play (see its `MediaSession.Callback`) and playback stays paused until the
      * caller resumes it via [resume] once the trigger's Hebrew narration finishes.
      */
-    fun play() {
-        controller?.play()
-    }
+    fun play() = withController { it.play() }
 
     /** Resumes actual playback once the trigger's narration has finished (or been dismissed). */
-    fun resume() {
-        controller?.play()
-    }
+    fun resume() = withController { it.play() }
 
-    fun pause() {
-        controller?.pause()
-    }
+    fun pause() = withController { it.pause() }
 
-    fun seekTo(positionMs: Long) {
-        controller?.seekTo(positionMs)
-    }
+    fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
 
-    fun seekForward(deltaMs: Long = AppDefaults.SEEK_STEP_MS) {
-        val mediaController = controller ?: return
+    fun seekForward(deltaMs: Long = AppDefaults.SEEK_STEP_MS) = withController { mediaController ->
         val duration = mediaController.duration.coerceAtLeast(0)
         val target = (mediaController.currentPosition + deltaMs).let { if (duration > 0) it.coerceAtMost(duration) else it }
         mediaController.seekTo(target)
     }
 
-    fun seekBackward(deltaMs: Long = AppDefaults.SEEK_STEP_MS) {
-        val mediaController = controller ?: return
+    fun seekBackward(deltaMs: Long = AppDefaults.SEEK_STEP_MS) = withController { mediaController ->
         val target = (mediaController.currentPosition - deltaMs).coerceAtLeast(0)
         mediaController.seekTo(target)
     }
 
-    fun release() {
-        stopPositionUpdates()
-        controller?.removeListener(playerListener)
-        controller = null
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        controllerFuture = null
+    /** Connects to [PlaybackService] on first use; queues [action] until that connection is ready. */
+    private fun withController(action: (MediaController) -> Unit) {
+        controller?.let { action(it); return }
+        val future = controllerFuture ?: run {
+            val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+            MediaController.Builder(context, sessionToken).buildAsync().also { controllerFuture = it }
+        }
+        future.addListener(
+            {
+                val mediaController = controller ?: future.get().also { newController ->
+                    controller = newController
+                    newController.addListener(playerListener)
+                }
+                action(mediaController)
+            },
+            MoreExecutors.directExecutor(),
+        )
     }
 
     private fun startPositionUpdates() {

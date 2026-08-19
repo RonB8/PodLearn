@@ -20,9 +20,13 @@ import com.example.podlingo.player.PlayerController
 import com.example.podlingo.speech.HebrewSpeaker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -43,6 +47,12 @@ class PlayerViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<PlayerScreenState>(PlayerScreenState.Loading)
     val uiState: StateFlow<PlayerScreenState> = _uiState.asStateFlow()
+
+    /** One-shot: the screen navigates to this episode (manual skip, or auto-advance at episode end). */
+    private val _navigateToEpisode = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val navigateToEpisode: SharedFlow<String> = _navigateToEpisode.asSharedFlow()
+
+    private var nextEpisodeId: String? = null
 
     private var cachedWords: List<WordTiming>? = null
 
@@ -77,6 +87,14 @@ class PlayerViewModel @Inject constructor(
                 handleTrigger(trigger.pauseTimeMs)
             }
         }
+
+        viewModelScope.launch {
+            playerController.playbackEnded.collect { endedEpisodeId ->
+                if (endedEpisodeId != episodeId) return@collect
+                val next = nextEpisodeId ?: return@collect
+                if (settingsRepository.autoPlayNextEnabled.value) _navigateToEpisode.tryEmit(next)
+            }
+        }
     }
 
     fun togglePlayPause() {
@@ -85,9 +103,15 @@ class PlayerViewModel @Inject constructor(
         if (state.player.isPlaying) playerController.pause() else playerController.play()
     }
 
+    fun skipToNextEpisode() {
+        nextEpisodeId?.let { _navigateToEpisode.tryEmit(it) }
+    }
+
     fun skipForward() = playerController.seekForward()
 
     fun skipBackward() = playerController.seekBackward()
+
+    fun setPlaybackSpeed(speed: Float) = playerController.setPlaybackSpeed(speed)
 
     fun seekTo(positionMs: Long) = playerController.seekTo(positionMs)
 
@@ -125,17 +149,25 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun startPlayback(episode: EpisodeEntity) {
+    private suspend fun startPlayback(episode: EpisodeEntity) {
         val localFilePath = episode.localFilePath
         if (localFilePath == null) {
             _uiState.value = PlayerScreenState.Failed("Downloaded audio file is missing")
             return
         }
-        playerController.prepare(episode.title, localFilePath)
+        val artworkUrl = podcastRepository.getPodcast(episode.podcastId)?.imageUrl
+        playerController.prepare(episode.id, episode.title, artworkUrl, localFilePath)
+        val podcastEpisodes = podcastRepository.getEpisodes(episode.podcastId).first()
+        val currentIndex = podcastEpisodes.indexOfFirst { it.id == episode.id }
+        nextEpisodeId = if (currentIndex == -1) null else podcastEpisodes.getOrNull(currentIndex + 1)?.id
         _uiState.value = PlayerScreenState.Ready(
+            episodeId = episode.id,
             episodeTitle = episode.title,
             player = playerController.playerState.value,
+            artworkUrl = artworkUrl,
+            hasNextEpisode = nextEpisodeId != null,
         )
+        podcastRepository.recordEpisodePlayed(episode.id)
     }
 
     private fun handleTrigger(pauseTimeMs: Long) {
@@ -264,6 +296,5 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         hebrewSpeaker.stop()
-        playerController.release()
     }
 }

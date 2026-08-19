@@ -1,6 +1,7 @@
 package com.example.podlingo.testutil
 
 import com.example.podlingo.data.local.dao.EpisodeDao
+import com.example.podlingo.data.local.dao.RecentlyPlayedItem
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.TranscriptStatus
 import kotlinx.coroutines.flow.Flow
@@ -30,5 +31,23 @@ class FakeEpisodeDao : EpisodeDao {
 
     override suspend fun updateLocalFilePath(id: String, path: String) {
         episodes.update { list -> list.map { if (it.id == id) it.copy(localFilePath = path) else it } }
+    }
+
+    override suspend fun updateLastPlayed(id: String, epochMs: Long) {
+        episodes.update { list -> list.map { if (it.id == id) it.copy(lastPlayedEpochMs = epochMs) else it } }
+    }
+
+    override fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>> = episodes.map { list ->
+        list.filter { it.lastPlayedEpochMs != null }
+            .sortedByDescending { it.lastPlayedEpochMs }
+            .map {
+                RecentlyPlayedItem(
+                    it.id,
+                    it.title,
+                    podcastTitle = "",
+                    artworkUrl = null,
+                    lastPlayedEpochMs = it.lastPlayedEpochMs!!,
+                )
+            }
     }
 }

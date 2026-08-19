@@ -16,4 +16,10 @@ class SettingsViewModel @Inject constructor(
     fun setHardWordModeEnabled(enabled: Boolean) {
         settingsRepository.setHardWordModeEnabled(enabled)
     }
+
+    val autoPlayNextEnabled: StateFlow<Boolean> = settingsRepository.autoPlayNextEnabled
+
+    fun setAutoPlayNextEnabled(enabled: Boolean) {
+        settingsRepository.setAutoPlayNextEnabled(enabled)
+    }
 }

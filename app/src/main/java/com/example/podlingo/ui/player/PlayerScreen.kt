@@ -4,6 +4,9 @@ package com.example.podlingo.ui.player
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,14 +21,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,30 +42,48 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.podlingo.config.AppDefaults
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
+import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
+    onNavigateToEpisode: (String) -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showAddToPlaylist by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToEpisode.collect { episodeId -> onNavigateToEpisode(episodeId) }
+    }
+
+    val readyState = uiState as? PlayerScreenState.Ready
+    if (showAddToPlaylist && readyState != null) {
+        AddToPlaylistDialog(episodeId = readyState.episodeId, onDismiss = { showAddToPlaylist = false })
+    }
 
     Scaffold(
         topBar = {
@@ -67,6 +92,17 @@ fun PlayerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (readyState != null) {
+                        SpeedButton(
+                            currentSpeed = readyState.player.playbackSpeed,
+                            onSpeedSelected = viewModel::setPlaybackSpeed,
+                        )
+                        IconButton(onClick = { showAddToPlaylist = true }) {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
+                        }
                     }
                 },
             )
@@ -81,8 +117,10 @@ fun PlayerScreen(
                     onTogglePlayPause = viewModel::togglePlayPause,
                     onSkipBackward = viewModel::skipBackward,
                     onSkipForward = viewModel::skipForward,
+                    onSkipToNextEpisode = viewModel::skipToNextEpisode,
                     onSeek = viewModel::seekTo,
                     onDismissOverlay = viewModel::dismissSentenceOverlay,
+                    onSwipeDownDismiss = onBack,
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message)
             }
@@ -124,7 +162,11 @@ private fun PreprocessingView(state: PlayerScreenState.Preprocessing) {
 
 private fun preprocessingLabel(progress: PreprocessingProgress): String = when (progress) {
     is PreprocessingProgress.Downloading -> "Downloading episode..."
-    PreprocessingProgress.Transcribing -> "Transcribing speech (this can take a while)..."
+    is PreprocessingProgress.Transcribing -> if (progress.chunkCount > 1) {
+        "Transcribing speech (part ${progress.chunkIndex}/${progress.chunkCount})..."
+    } else {
+        "Transcribing speech (this can take a while)..."
+    }
     PreprocessingProgress.Processing -> "Building transcript..."
     PreprocessingProgress.Ready -> "Ready"
     is PreprocessingProgress.Failed -> progress.message
@@ -143,22 +185,26 @@ private fun ReadyPlayerView(
     onTogglePlayPause: () -> Unit,
     onSkipBackward: () -> Unit,
     onSkipForward: () -> Unit,
+    onSkipToNextEpisode: () -> Unit,
     onSeek: (Long) -> Unit,
     onDismissOverlay: () -> Unit,
+    onSwipeDownDismiss: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            EpisodeArtwork()
+            EpisodeArtwork(artworkUrl = state.artworkUrl, onSwipeDownDismiss = onSwipeDownDismiss)
         }
         Spacer(modifier = Modifier.height(32.dp))
         PlaybackControls(
             player = state.player,
+            hasNextEpisode = state.hasNextEpisode,
             onTogglePlayPause = onTogglePlayPause,
             onSkipBackward = onSkipBackward,
             onSkipForward = onSkipForward,
+            onSkipToNextEpisode = onSkipToNextEpisode,
             onSeek = onSeek,
         )
 
@@ -177,30 +223,58 @@ private fun ReadyPlayerView(
     }
 }
 
+/**
+ * Dragging down past [SWIPE_DISMISS_THRESHOLD_DP] triggers [onSwipeDownDismiss] - the artwork is
+ * the one large area on this screen with no other gesture (the slider below drags horizontally,
+ * buttons only tap), so it's the safe, conflict-free target for the "pull down to dismiss" swipe
+ * standard in media players like Spotify.
+ */
 @Composable
-private fun EpisodeArtwork() {
+private fun EpisodeArtwork(artworkUrl: String?, onSwipeDownDismiss: () -> Unit) {
+    val dismissThresholdPx = with(LocalDensity.current) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
+    var accumulatedDrag by remember { mutableStateOf(0f) }
+
     Box(
         modifier = Modifier
             .aspectRatio(1f, matchHeightConstraintsFirst = true)
             .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer),
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta -> accumulatedDrag += delta },
+                onDragStopped = {
+                    if (accumulatedDrag > dismissThresholdPx) onSwipeDownDismiss()
+                    accumulatedDrag = 0f
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
+        // Kept underneath as a fallback: shows through if there's no artwork, or it fails to load.
         Icon(
             imageVector = Icons.Filled.MusicNote,
             contentDescription = null,
             modifier = Modifier.size(96.dp),
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
         )
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
     }
 }
 
 @Composable
 private fun PlaybackControls(
     player: PlayerUiState,
+    hasNextEpisode: Boolean,
     onTogglePlayPause: () -> Unit,
     onSkipBackward: () -> Unit,
     onSkipForward: () -> Unit,
+    onSkipToNextEpisode: () -> Unit,
     onSeek: (Long) -> Unit,
 ) {
     var isDragging by remember { mutableStateOf(false) }
@@ -226,28 +300,50 @@ private fun PlaybackControls(
         Text(formatMillis(player.durationMs))
     }
     Spacer(modifier = Modifier.height(24.dp))
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        SkipButton(seconds = AppDefaults.SEEK_STEP_MS / 1000, isForward = false, onClick = onSkipBackward)
+    // The core back/play/forward group is centered as its own unit (Box + align(Center)) so the
+    // play button's position never shifts based on whether the optional next-episode button (a
+    // separate, unrelated action) happens to be showing - it docks at the end instead.
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            SkipButton(seconds = AppDefaults.SEEK_STEP_MS / 1000, isForward = false, onClick = onSkipBackward)
 
-        if (player.isBuffering) {
-            Box(modifier = Modifier.size(64.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+            if (player.isBuffering) {
+                Box(modifier = Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                FilledIconButton(
+                    onClick = onTogglePlayPause,
+                    modifier = Modifier.size(64.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(),
+                ) {
+                    Icon(
+                        imageVector = if (player.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (player.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
             }
-        } else {
-            FilledIconButton(
-                onClick = onTogglePlayPause,
-                modifier = Modifier.size(64.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(),
+
+            SkipButton(seconds = AppDefaults.SEEK_STEP_MS / 1000, isForward = true, onClick = onSkipForward)
+        }
+
+        if (hasNextEpisode) {
+            IconButton(
+                onClick = onSkipToNextEpisode,
+                modifier = Modifier.align(Alignment.CenterEnd).size(52.dp),
             ) {
                 Icon(
-                    imageVector = if (player.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (player.isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(36.dp),
+                    imageVector = Icons.Filled.SkipNext,
+                    contentDescription = "Next episode",
+                    modifier = Modifier.size(32.dp),
                 )
             }
         }
-
-        SkipButton(seconds = AppDefaults.SEEK_STEP_MS / 1000, isForward = true, onClick = onSkipForward)
     }
 }
 
@@ -317,9 +413,34 @@ private fun SentenceOverlay(
     }
 }
 
+@Composable
+private fun SpeedButton(currentSpeed: Float, onSpeedSelected: (Float) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(formatSpeed(currentSpeed))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SPEED_OPTIONS.forEach { speed ->
+                DropdownMenuItem(
+                    text = { Text(formatSpeed(speed)) },
+                    onClick = { onSpeedSelected(speed); expanded = false },
+                )
+            }
+        }
+    }
+}
+
+private fun formatSpeed(speed: Float): String =
+    if (speed == speed.toInt().toFloat()) "${speed.toInt()}.0x" else "${speed}x"
+
+private val SPEED_OPTIONS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+
 private fun formatMillis(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+
+private const val SWIPE_DISMISS_THRESHOLD_DP = 96

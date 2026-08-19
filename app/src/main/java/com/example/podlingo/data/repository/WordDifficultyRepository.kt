@@ -1,6 +1,7 @@
 package com.example.podlingo.data.repository
 
 import android.content.Context
+import com.example.podlingo.core.ElementaryFunctionWords
 import com.example.podlingo.core.EnglishStemmer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -16,6 +17,13 @@ import javax.inject.Singleton
  * surface forms ("members", "voted"). A literal-only lookup would misclassify those as unranked
  * (hardest) even though their base form is elementary, so a miss falls through [EnglishStemmer]'s
  * base-form candidates before giving up.
+ *
+ * That still isn't enough for closed-class words: the bundled list omits "the" outright, and
+ * omits every irregular form of "be"/"do"/"have" ("is", "was", "been", "does", "had", ...) - no
+ * suffix stemmer can derive those from their headword either, since they're irregular rather than
+ * inflected. Left unhandled, the single most common words in English would rank as the hardest
+ * ones in a sentence. [ElementaryFunctionWords] short-circuits that closed, finite set to the
+ * easiest rank before either lookup runs.
  */
 @Singleton
 class WordDifficultyRepository @Inject constructor(@ApplicationContext private val context: Context) {
@@ -26,6 +34,7 @@ class WordDifficultyRepository @Inject constructor(@ApplicationContext private v
     fun rankOf(word: String): Int {
         val normalized = normalize(word)
         if (normalized.isEmpty()) return UNKNOWN_RANK
+        if (ElementaryFunctionWords.contains(normalized)) return EASIEST_RANK
         levelRankByWord[normalized]?.let { return it }
         for (candidate in EnglishStemmer.candidateBaseForms(normalized)) {
             levelRankByWord[candidate]?.let { return it }
@@ -52,6 +61,7 @@ class WordDifficultyRepository @Inject constructor(@ApplicationContext private v
 
     companion object {
         const val UNKNOWN_RANK = 5
+        private const val EASIEST_RANK = 0
         private const val ASSET_FILE_NAME = "oxford_word_levels.txt"
         private val CEFR_RANK = mapOf("A1" to 0, "A2" to 1, "B1" to 2, "B2" to 3, "C1" to 4)
     }

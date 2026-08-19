@@ -26,6 +26,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
+    val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -54,6 +55,19 @@ fun SettingsScreen(
                     Switch(
                         checked = hardWordModeEnabled,
                         onCheckedChange = viewModel::setHardWordModeEnabled,
+                    )
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text("Auto-play next episode") },
+                supportingContent = {
+                    Text("When an episode finishes, automatically start the next one in the podcast.")
+                },
+                trailingContent = {
+                    Switch(
+                        checked = autoPlayNextEnabled,
+                        onCheckedChange = viewModel::setAutoPlayNextEnabled,
                     )
                 },
             )

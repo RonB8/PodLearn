@@ -27,4 +27,5 @@ data class EpisodeEntity(
     val durationSec: Long? = null,
     val transcriptStatus: TranscriptStatus = TranscriptStatus.NONE,
     val transcriptError: String? = null,
+    val lastPlayedEpochMs: Long? = null,
 )

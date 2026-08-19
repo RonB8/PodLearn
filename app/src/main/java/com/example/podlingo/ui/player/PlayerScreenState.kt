@@ -12,8 +12,11 @@ sealed interface PlayerScreenState {
     ) : PlayerScreenState
 
     data class Ready(
+        val episodeId: String,
         val episodeTitle: String,
         val player: PlayerUiState,
+        val artworkUrl: String? = null,
+        val hasNextEpisode: Boolean = false,
         val resolvedSentenceText: String? = null,
         val translatedSentenceText: String? = null,
         val isTranslating: Boolean = false,
