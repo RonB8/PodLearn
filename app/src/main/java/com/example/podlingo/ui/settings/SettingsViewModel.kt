@@ -2,6 +2,7 @@ package com.example.podlingo.ui.settings
 
 import androidx.lifecycle.ViewModel
 import com.example.podlingo.data.repository.SettingsRepository
+import com.example.podlingo.data.repository.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.StateFlow
@@ -21,5 +22,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoPlayNextEnabled(enabled: Boolean) {
         settingsRepository.setAutoPlayNextEnabled(enabled)
+    }
+
+    val themeMode: StateFlow<ThemeMode> = settingsRepository.themeMode
+
+    fun setThemeMode(mode: ThemeMode) {
+        settingsRepository.setThemeMode(mode)
     }
 }

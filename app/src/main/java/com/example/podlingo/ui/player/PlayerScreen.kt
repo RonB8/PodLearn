@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -109,13 +110,6 @@ fun PlayerScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    if (readyState != null) {
-                        IconButton(onClick = { showAddToPlaylist = true }) {
-                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
-                        }
-                    }
-                },
             )
         },
     ) { padding ->
@@ -134,6 +128,7 @@ fun PlayerScreen(
                     onDismissOverlay = viewModel::dismissSentenceOverlay,
                     onSwipeDownDismiss = onBack,
                     onToggleTranscript = viewModel::toggleTranscript,
+                    onAddToPlaylist = { showAddToPlaylist = true },
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message)
             }
@@ -204,6 +199,7 @@ private fun ReadyPlayerView(
     onDismissOverlay: () -> Unit,
     onSwipeDownDismiss: () -> Unit,
     onToggleTranscript: () -> Unit,
+    onAddToPlaylist: () -> Unit,
 ) {
     val wordsBySentence = remember(state.words) { state.words.groupBy { it.sentenceId } }
 
@@ -227,7 +223,11 @@ private fun ReadyPlayerView(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        TranscriptButtonRow(transcriptVisible = state.transcriptVisible, onToggleTranscript = onToggleTranscript)
+        PlayerActionRow(
+            transcriptVisible = state.transcriptVisible,
+            onToggleTranscript = onToggleTranscript,
+            onAddToPlaylist = onAddToPlaylist,
+        )
         Spacer(modifier = Modifier.height(20.dp))
         PlaybackControls(
             player = state.player,
@@ -335,7 +335,11 @@ private fun EpisodeArtwork(
 }
 
 @Composable
-private fun TranscriptButtonRow(transcriptVisible: Boolean, onToggleTranscript: () -> Unit) {
+private fun PlayerActionRow(
+    transcriptVisible: Boolean,
+    onToggleTranscript: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -348,6 +352,19 @@ private fun TranscriptButtonRow(transcriptVisible: Boolean, onToggleTranscript: 
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.List,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+        }
+        item {
+            AssistChip(
+                onClick = onAddToPlaylist,
+                label = { Text("Add to playlist") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )

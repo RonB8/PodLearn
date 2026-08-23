@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.podlingo.core.SentenceResolverTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-08-18T09:08:56.644Z" hostname="RONB" time="0.021">
+<testsuite name="com.example.podlingo.core.SentenceResolverTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-08-19T16:58:16.540Z" hostname="RONB" time="0.153">
   <properties/>
-  <testcase name="empty word list returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.005"/>
-  <testcase name="single word timeline resolves correctly" classname="com.example.podlingo.core.SentenceResolverTest" time="0.004"/>
-  <testcase name="pause after the last word within the gap resolves to the last sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
+  <testcase name="empty word list returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.113"/>
+  <testcase name="single word timeline resolves correctly" classname="com.example.podlingo.core.SentenceResolverTest" time="0.029"/>
+  <testcase name="pause after the last word within the gap resolves to the last sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
   <testcase name="pause well into a new sentence resolves to that new sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
-  <testcase name="pause in a silence gap beyond the threshold returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
-  <testcase name="pause well inside a sentence resolves to that sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
+  <testcase name="pause in a silence gap beyond the threshold returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
+  <testcase name="pause well inside a sentence resolves to that sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
   <testcase name="effective time before the first word resolves to it when close enough" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
   <testcase name="gap exactly at the threshold still resolves (not strictly greater)" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
-  <testcase name="pause just after a new sentence began resolves to the previous sentence (1_23 vs 1_29 style)" classname="com.example.podlingo.core.SentenceResolverTest" time="0.001"/>
-  <testcase name="effective time far before the first word returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.002"/>
-  <testcase name="pause in a silence gap within the threshold still resolves to the preceding sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
+  <testcase name="pause just after a new sentence began resolves to the previous sentence (1_23 vs 1_29 style)" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
+  <testcase name="effective time far before the first word returns no relevant sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.0"/>
+  <testcase name="pause in a silence gap within the threshold still resolves to the preceding sentence" classname="com.example.podlingo.core.SentenceResolverTest" time="0.003"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

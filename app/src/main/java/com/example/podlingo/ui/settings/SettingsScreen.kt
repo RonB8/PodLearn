@@ -11,14 +11,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.data.repository.ThemeMode
 
 @Composable
 fun SettingsScreen(
@@ -27,6 +32,7 @@ fun SettingsScreen(
 ) {
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -41,6 +47,17 @@ fun SettingsScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxWidth().padding(padding)) {
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text("Theme") },
+                supportingContent = {
+                    ThemeModeSelector(
+                        selected = themeMode,
+                        onSelected = viewModel::setThemeMode,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                },
+            )
             ListItem(
                 modifier = Modifier.fillMaxWidth(),
                 headlineContent = { Text("Translate hardest word only") },
@@ -70,6 +87,25 @@ fun SettingsScreen(
                         onCheckedChange = viewModel::setAutoPlayNextEnabled,
                     )
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeModeSelector(
+    selected: ThemeMode,
+    onSelected: (ThemeMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val options = listOf(ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.SYSTEM to "System")
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (mode, label) ->
+            SegmentedButton(
+                selected = selected == mode,
+                onClick = { onSelected(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                label = { Text(label) },
             )
         }
     }

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.podlingo.core.WordDifficultyRankerTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-08-18T09:08:56.770Z" hostname="RONB" time="0.025">
+<testsuite name="com.example.podlingo.core.WordDifficultyRankerTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-08-19T16:58:16.777Z" hostname="RONB" time="0.029">
   <properties/>
-  <testcase name="orders words hardest first, ties keep original order" classname="com.example.podlingo.core.WordDifficultyRankerTest" time="0.024"/>
+  <testcase name="orders words hardest first, ties keep original order" classname="com.example.podlingo.core.WordDifficultyRankerTest" time="0.028"/>
   <testcase name="drops punctuation-only tokens" classname="com.example.podlingo.core.WordDifficultyRankerTest" time="0.001"/>
+  <testcase name="drops capitalized unrecognized words as names, wherever they fall in the sentence" classname="com.example.podlingo.core.WordDifficultyRankerTest" time="0.0"/>
+  <testcase name="keeps a capitalized word eligible when it's actually in the vocabulary" classname="com.example.podlingo.core.WordDifficultyRankerTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

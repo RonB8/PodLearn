@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class ThemeMode { LIGHT, DARK, SYSTEM }
+
 /**
  * App-wide user preferences. Backed by SharedPreferences rather than DataStore - a couple of
  * plain flags don't warrant the extra dependency.
@@ -31,6 +33,17 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
     fun setAutoPlayNextEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_PLAY_NEXT, enabled).apply()
         _autoPlayNextEnabled.value = enabled
+    }
+
+    private val _themeMode = MutableStateFlow(
+        prefs.getString(KEY_THEME_MODE, null)?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+            ?: ThemeMode.SYSTEM,
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+        _themeMode.value = mode
     }
 
     /**
@@ -57,6 +70,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         private const val PREFS_NAME = "podlingo_settings"
         private const val KEY_HARD_WORD_MODE = "hard_word_mode_enabled"
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
+        private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_LAST_ROUTE = "last_route"
         private const val KEY_LAST_TAB_INDEX = "last_tab_index"
     }

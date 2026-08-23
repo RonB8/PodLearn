@@ -1,6 +1,9 @@
 package com.example.podlingo.ui.player
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,11 +22,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.podlingo.ui.common.ArtworkThumbnail
+
+private const val SWIPE_UP_THRESHOLD_DP = 24
 
 @Composable
 fun MiniPlayerBar(
@@ -37,6 +47,8 @@ fun MiniPlayerBar(
     } else {
         0f
     }
+    val swipeUpThresholdPx = with(LocalDensity.current) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
+    var accumulatedDrag by remember { mutableStateOf(0f) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -54,6 +66,16 @@ fun MiniPlayerBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onClick)
+                    // A small upward flick also opens the player - the natural "pull this thing
+                    // up" gesture Spotify/YouTube Music users already expect from a mini-player.
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta -> accumulatedDrag += delta },
+                        onDragStopped = {
+                            if (accumulatedDrag < -swipeUpThresholdPx) onClick()
+                            accumulatedDrag = 0f
+                        },
+                    )
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

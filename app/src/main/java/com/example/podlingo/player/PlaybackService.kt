@@ -1,11 +1,14 @@
 package com.example.podlingo.player
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.os.SystemClock
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionResult
+import com.example.podlingo.MainActivity
 import com.example.podlingo.config.AppDefaults
 import com.example.podlingo.core.TriggerDetector
 import com.example.podlingo.core.TriggerResult
@@ -35,7 +38,16 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this).build()
+        // Without this, tapping the media notification/lock-screen player does nothing - a
+        // MediaSession has no default "open the app" action, it has to be told what to launch.
+        val sessionActivity = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         mediaSession = MediaSession.Builder(this, player)
+            .setSessionActivity(sessionActivity)
             .setCallback(TriggerAwareCallback())
             .build()
     }

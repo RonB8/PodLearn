@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.podlingo.core.ElementaryFunctionWordsTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-08-19T16:58:15.625Z" hostname="RONB" time="0.14">
+  <properties/>
+  <testcase name="does not claim genuine content words" classname="com.example.podlingo.core.ElementaryFunctionWordsTest" time="0.131"/>
+  <testcase name="recognizes the article missing from the Oxford list" classname="com.example.podlingo.core.ElementaryFunctionWordsTest" time="0.0"/>
+  <testcase name="recognizes irregular be-do-have forms no suffix stemmer could derive" classname="com.example.podlingo.core.ElementaryFunctionWordsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -191,6 +191,7 @@ class PlayerViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
+            val effectiveTimeMs = pauseTimeMs - AppDefaults.REACTION_DELAY_MS
             when (val resolution = SentenceResolver.resolve(pauseTimeMs, AppDefaults.REACTION_DELAY_MS, words)) {
                 is SentenceResolution.Resolved -> {
                     val sentence = transcriptRepository.getSentence(resolution.sentenceId)
@@ -213,7 +214,7 @@ class PlayerViewModel @Inject constructor(
                         return@launch
                     }
                     if (settingsRepository.hardWordModeEnabled.value) {
-                        handleHardWordTrigger(resolution.sentenceId, words)
+                        handleHardWordTrigger(resolution.sentenceId, words, effectiveTimeMs)
                     } else {
                         // Leaving hard-word mode's per-sentence progression - restart clean if
                         // it's ever re-entered on this sentence.
@@ -259,10 +260,14 @@ class PlayerViewModel @Inject constructor(
      * restarting; a trigger elsewhere starts a fresh sentence at its hardest word. The cycle
      * wraps back to the hardest word once every word has been shown.
      */
-    private suspend fun handleHardWordTrigger(sentenceId: String, allWords: List<WordTiming>) {
+    private suspend fun handleHardWordTrigger(sentenceId: String, allWords: List<WordTiming>, effectiveTimeMs: Long) {
+        // Only words the user has actually heard by the time they paused are eligible - a hard
+        // word later in the sentence that hasn't played yet can't be what they were confused by
+        // (mirrors SentenceResolver's own "startMs <= effective time" rule for the same reason).
         val ranked = WordDifficultyRanker.orderHardestFirst(
-            allWords.filter { it.sentenceId == sentenceId },
+            allWords.filter { it.sentenceId == sentenceId && it.startMs <= effectiveTimeMs },
             wordDifficultyRepository::rankOf,
+            wordDifficultyRepository::isKnownWord,
         )
         if (ranked.isEmpty()) {
             playerController.resume()
@@ -318,6 +323,22 @@ class PlayerViewModel @Inject constructor(
             withTimeoutOrNull(AppDefaults.TTS_WAIT_TIMEOUT_MS) { hebrewSpeaker.speak(translated) }
         }
         playerController.resume()
+        // Auto-close the translation panel once its narration has actually finished, so it
+        // doesn't linger over the transcript after there's nothing left to read - unless a
+        // newer trigger (or a manual dismiss) already took over while this one was speaking.
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready || current.resolvedSentenceText != englishText) {
+                return@update current
+            }
+            current.copy(
+                resolvedSentenceText = null,
+                translatedSentenceText = null,
+                isTranslating = false,
+                noRelevantSentence = false,
+                activeSentenceId = null,
+                activeWord = null,
+            )
+        }
     }
 
     override fun onCleared() {

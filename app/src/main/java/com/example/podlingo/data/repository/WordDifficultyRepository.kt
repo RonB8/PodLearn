@@ -42,6 +42,13 @@ class WordDifficultyRepository @Inject constructor(@ApplicationContext private v
         return UNKNOWN_RANK
     }
 
+    /**
+     * Whether [word] is actually in this repository's vocabulary, as opposed to just landing in
+     * [rankOf]'s "unknown" tier by default. Used to tell an ordinary capitalized dictionary word
+     * ("The", "Welcome") apart from a probable name (`Ram`, `Samaria`) - see [WordDifficultyRanker].
+     */
+    fun isKnownWord(word: String): Boolean = rankOf(word) != UNKNOWN_RANK
+
     private fun loadLevels(): Map<String, Int> {
         val map = HashMap<String, Int>(6000)
         context.assets.open(ASSET_FILE_NAME).bufferedReader().useLines { lines ->
