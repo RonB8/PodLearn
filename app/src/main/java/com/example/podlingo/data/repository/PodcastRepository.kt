@@ -79,5 +79,9 @@ class PodcastRepository @Inject constructor(
         episodeDao.updateLastPlayed(episodeId, System.currentTimeMillis())
     }
 
+    suspend fun markEpisodeVocabCalibrated(episodeId: String) {
+        episodeDao.markVocabCalibrated(episodeId)
+    }
+
     fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>> = episodeDao.getRecentlyPlayed()
 }

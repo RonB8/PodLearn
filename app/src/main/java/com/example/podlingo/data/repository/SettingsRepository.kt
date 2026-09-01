@@ -36,6 +36,14 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         _autoFullSentenceEnabled.value = enabled
     }
 
+    private val _autoTranslateEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_TRANSLATE, false))
+    val autoTranslateEnabled: StateFlow<Boolean> = _autoTranslateEnabled.asStateFlow()
+
+    fun setAutoTranslateEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_TRANSLATE, enabled).apply()
+        _autoTranslateEnabled.value = enabled
+    }
+
     private val _autoPlayNextEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_PLAY_NEXT, true))
     val autoPlayNextEnabled: StateFlow<Boolean> = _autoPlayNextEnabled.asStateFlow()
 
@@ -79,6 +87,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         private const val PREFS_NAME = "podlingo_settings"
         private const val KEY_HARD_WORD_MODE = "hard_word_mode_enabled"
         private const val KEY_AUTO_FULL_SENTENCE = "auto_full_sentence_enabled"
+        private const val KEY_AUTO_TRANSLATE = "auto_translate_enabled"
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_LAST_ROUTE = "last_route"

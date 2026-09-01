@@ -6,13 +6,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -36,9 +41,13 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -88,6 +98,7 @@ import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -112,6 +123,24 @@ fun PlayerScreen(
     val readyState = uiState as? PlayerScreenState.Ready
     if (showAddToPlaylist && readyState != null) {
         AddToPlaylistDialog(episodeId = readyState.episodeId, onDismiss = { showAddToPlaylist = false })
+    }
+    readyState?.vocabCalibration?.let { calibration ->
+        VocabCalibrationDialog(
+            calibration = calibration,
+            onWordToggled = viewModel::onCalibrationWordToggled,
+            onContinue = viewModel::onCalibrationContinue,
+        )
+    }
+    if (readyState?.quizPrompt == true) {
+        QuizPromptDialog(onAnswer = viewModel::onQuizPromptAnswer)
+    }
+    readyState?.quiz?.let { quiz ->
+        VocabQuizDialog(
+            quiz = quiz,
+            onAnswerSelected = viewModel::onQuizAnswerSelected,
+            onNext = viewModel::onQuizNext,
+            onDismiss = viewModel::onQuizDismissed,
+        )
     }
 
     Scaffold(
@@ -169,6 +198,8 @@ fun PlayerScreen(
                     onToggleTranscript = viewModel::toggleTranscript,
                     onAddToPlaylist = { showAddToPlaylist = true },
                     onToggleHardWordMode = viewModel::toggleHardWordMode,
+                    onToggleAutoTranslate = viewModel::toggleAutoTranslate,
+                    onDismissTranslationPopup = viewModel::dismissTranslationPopup,
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message)
             }
@@ -242,6 +273,8 @@ private fun ReadyPlayerView(
     onToggleTranscript: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onToggleHardWordMode: () -> Unit,
+    onToggleAutoTranslate: () -> Unit,
+    onDismissTranslationPopup: () -> Unit,
 ) {
     val wordsBySentence = remember(state.words) { state.words.groupBy { it.sentenceId } }
 
@@ -272,6 +305,8 @@ private fun ReadyPlayerView(
             onAddToPlaylist = onAddToPlaylist,
             hardWordModeEnabled = state.hardWordModeEnabled,
             onToggleHardWordMode = onToggleHardWordMode,
+            autoTranslateEnabled = state.autoTranslateEnabled,
+            onToggleAutoTranslate = onToggleAutoTranslate,
         )
         Spacer(modifier = Modifier.height(20.dp))
         PlaybackControls(
@@ -292,6 +327,17 @@ private fun ReadyPlayerView(
             Column {
                 Spacer(modifier = Modifier.height(16.dp))
                 NoRelevantSentenceBanner(onDismiss = onDismissOverlay)
+            }
+        }
+
+        // Auto-translate: a quiet inline translation for a word the user's already said they
+        // don't know, as it plays - never pauses playback, just fades away on its own.
+        AnimatedVisibility(visible = state.translationPopup != null) {
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+                state.translationPopup?.let { popup ->
+                    TranslationPopupBanner(popup = popup, onDismiss = onDismissTranslationPopup)
+                }
             }
         }
     }
@@ -382,6 +428,8 @@ private fun PlayerActionRow(
     onAddToPlaylist: () -> Unit,
     hardWordModeEnabled: Boolean,
     onToggleHardWordMode: () -> Unit,
+    autoTranslateEnabled: Boolean,
+    onToggleAutoTranslate: () -> Unit,
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -422,6 +470,20 @@ private fun PlayerActionRow(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.Translate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+        }
+        item {
+            FilterChip(
+                selected = autoTranslateEnabled,
+                onClick = onToggleAutoTranslate,
+                label = { Text("Auto translate") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.School,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -717,6 +779,191 @@ private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
     }
 }
 
+/** Auto-dismisses on its own after [TRANSLATION_POPUP_DURATION_MS] - the user never has to interact with it, playback never pauses for it. */
+@Composable
+private fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () -> Unit) {
+    LaunchedEffect(popup) {
+        delay(TRANSLATION_POPUP_DURATION_MS)
+        onDismiss()
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.School,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                text = "${popup.word} — ${popup.translation}",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The "which of this episode's hardest words do you already know" step - rises up from the
+ * bottom on first appearance and settles centered (a plain, screen-anchored [Dialog], not a
+ * Material3 bottom sheet docked to the edge). Cascading to an easier tier updates [calibration]
+ * in place without re-triggering the enter animation - only the panel's arrival animates.
+ */
+@Composable
+private fun VocabCalibrationDialog(
+    calibration: VocabCalibrationState,
+    onWordToggled: (String) -> Unit,
+    onContinue: () -> Unit,
+) {
+    Dialog(onDismissRequest = onContinue) {
+        var visible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { visible = true }
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        ) {
+            Card(shape = RoundedCornerShape(24.dp)) {
+                Column(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.School,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Do you know these words?",
+                        style = MaterialTheme.typography.titleLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = "Tap any word you don't know - it'll translate automatically when it comes up.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+                    )
+                    // Capped and independently scrollable so a long word list can never push the
+                    // Continue button itself off-screen - the header and button always stay put.
+                    FlowRow(
+                        modifier = Modifier
+                            .heightIn(max = CALIBRATION_WORD_LIST_MAX_HEIGHT_DP.dp)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        calibration.words.forEach { word ->
+                            FilterChip(
+                                selected = word in calibration.selected,
+                                onClick = { onWordToggled(word) },
+                                label = { Text(word) },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+                        Text("Continue")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuizPromptDialog(onAnswer: (startQuiz: Boolean) -> Unit) {
+    AlertDialog(
+        onDismissRequest = { onAnswer(false) },
+        title = { Text("Review what you learned?") },
+        text = { Text("Want to try a quick quiz on the words you didn't know in this episode?") },
+        confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text("Yes") } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("No") } },
+    )
+}
+
+/** One question at a time, then a score summary - [quiz]'s current question drives right/wrong reveal via color once [VocabQuizState.answeredThisQuestion] is set. */
+@Composable
+private fun VocabQuizDialog(
+    quiz: VocabQuizState,
+    onAnswerSelected: (String) -> Unit,
+    onNext: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = {}) {
+        Card(shape = RoundedCornerShape(24.dp)) {
+            Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
+                if (quiz.finished) {
+                    Text("Quiz complete!", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You got ${quiz.correctCount} out of ${quiz.questions.size} right.",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        Text("Done")
+                    }
+                } else {
+                    val question = quiz.questions[quiz.currentIndex]
+                    val answered = quiz.answeredThisQuestion
+                    Text(
+                        text = "Question ${quiz.currentIndex + 1}/${quiz.questions.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(question.word, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    question.options.forEach { option ->
+                        val isCorrectOption = option == question.correctAnswer
+                        val containerColor = when {
+                            answered == null -> MaterialTheme.colorScheme.surfaceVariant
+                            isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
+                            option == answered -> MaterialTheme.colorScheme.errorContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        }
+                        val contentColor = when {
+                            answered == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                            isCorrectOption -> MaterialTheme.colorScheme.onPrimaryContainer
+                            option == answered -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Button(
+                            onClick = { if (answered == null) onAnswerSelected(option) },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor),
+                        ) {
+                            Text(option)
+                        }
+                    }
+                    if (answered != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (quiz.currentIndex + 1 >= quiz.questions.size) "See results" else "Next")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SpeedButton(currentSpeed: Float, onSpeedSelected: (Float) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
@@ -751,3 +998,7 @@ private const val SWIPE_DISMISS_THRESHOLD_DP = 96
 
 /** A quick downward flick dismisses even short of [SWIPE_DISMISS_THRESHOLD_DP], same as a fling-to-dismiss card. */
 private const val FLING_DISMISS_VELOCITY_PX_PER_S = 1200f
+
+private const val TRANSLATION_POPUP_DURATION_MS = 3500L
+
+private const val CALIBRATION_WORD_LIST_MAX_HEIGHT_DP = 380

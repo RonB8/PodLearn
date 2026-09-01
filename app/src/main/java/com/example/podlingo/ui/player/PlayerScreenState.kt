@@ -32,6 +32,16 @@ sealed interface PlayerScreenState {
         val activeSentenceId: String? = null,
         /** Hard-word mode's specific target word within [activeSentenceId], if that's the active trigger. */
         val activeWord: String? = null,
+        /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.autoTranslateEnabled]. */
+        val autoTranslateEnabled: Boolean = false,
+        /** Non-null while the "which of these words do you know" panel is open for this episode. */
+        val vocabCalibration: VocabCalibrationState? = null,
+        /** A transient inline translation shown while an unknown word plays - see [PlayerViewModel]. */
+        val translationPopup: WordTranslationPopup? = null,
+        /** True while the "review words you didn't know?" Yes/No prompt is showing after the episode ends. */
+        val quizPrompt: Boolean = false,
+        /** Non-null while the end-of-episode vocabulary quiz is active. */
+        val quiz: VocabQuizState? = null,
     ) : PlayerScreenState
 
     data class Failed(val message: String, val episodeTitle: String? = null) : PlayerScreenState

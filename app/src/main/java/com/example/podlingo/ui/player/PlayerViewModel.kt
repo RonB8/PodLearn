@@ -7,15 +7,18 @@ import com.example.podlingo.config.AppDefaults
 import com.example.podlingo.core.SentenceResolution
 import com.example.podlingo.core.SentenceResolver
 import com.example.podlingo.core.WordDifficultyRanker
+import com.example.podlingo.core.WordNormalizer
 import com.example.podlingo.core.WordTiming
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.TranscriptStatus
+import com.example.podlingo.data.local.entity.WordKnowledgeStatus
 import com.example.podlingo.data.repository.PodcastRepository
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.data.repository.SettingsRepository
 import com.example.podlingo.data.repository.TranscriptRepository
 import com.example.podlingo.data.repository.TranslationRepository
 import com.example.podlingo.data.repository.WordDifficultyRepository
+import com.example.podlingo.data.repository.WordKnowledgeRepository
 import com.example.podlingo.player.PlayerController
 import com.example.podlingo.speech.HebrewSpeaker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,6 +44,7 @@ class PlayerViewModel @Inject constructor(
     private val hebrewSpeaker: HebrewSpeaker,
     private val settingsRepository: SettingsRepository,
     private val wordDifficultyRepository: WordDifficultyRepository,
+    private val wordKnowledgeRepository: WordKnowledgeRepository,
 ) : ViewModel() {
 
     private val episodeId: String = checkNotNull(savedStateHandle["episodeId"])
@@ -59,6 +63,19 @@ class PlayerViewModel @Inject constructor(
     // Progressive hard-word mode: which sentence we're stepping through and how far.
     private var hardWordSentenceId: String? = null
     private var hardWordIndex: Int = 0
+
+    // Vocab calibration: this episode's words grouped by CEFR rank (5=hardest..0=A1), computed
+    // once per calibration pass so onCalibrationContinue can cascade to the next tier down.
+    private var pendingDifficultyTiers: Map<Int, List<WordTiming>> = emptyMap()
+
+    // Silent in-playback translation popup: this episode's unknown-word occurrences (first
+    // occurrence per unique word, sorted by start time) and which of them have already fired this
+    // playthrough, so rewinding/replaying doesn't re-pop the same word.
+    private var unknownWordOccurrences: List<WordTiming> = emptyList()
+    private val firedUnknownWords = mutableSetOf<String>()
+
+    // End-of-episode quiz: the display-form words awaiting quiz-building once the user says yes.
+    private var pendingQuizWords: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -79,6 +96,7 @@ class PlayerViewModel @Inject constructor(
                 _uiState.update { current ->
                     if (current is PlayerScreenState.Ready) current.copy(player = playerUiState) else current
                 }
+                checkAutoTranslatePopup(playerUiState.positionMs)
             }
         }
 
@@ -91,8 +109,15 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             playerController.playbackEnded.collect { endedEpisodeId ->
                 if (endedEpisodeId != episodeId) return@collect
-                val next = nextEpisodeId ?: return@collect
-                if (settingsRepository.autoPlayNextEnabled.value) _navigateToEpisode.tryEmit(next)
+                val unknownWords = unknownWordsInEpisode()
+                if (unknownWords.isEmpty()) {
+                    advanceToNextEpisodeIfEnabled()
+                } else {
+                    pendingQuizWords = unknownWords
+                    _uiState.update { current ->
+                        if (current is PlayerScreenState.Ready) current.copy(quizPrompt = true) else current
+                    }
+                }
             }
         }
 
@@ -131,6 +156,118 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleHardWordMode() {
         settingsRepository.setHardWordModeEnabled(!settingsRepository.hardWordModeEnabled.value)
+    }
+
+    /**
+     * Turning on starts (or resumes) calibrating this episode's hardest words against the user's
+     * vocabulary profile - see [startVocabCalibration]. Turning off cancels immediately, closing
+     * any calibration panel that happened to be open.
+     */
+    fun toggleAutoTranslate() {
+        val turningOn = !settingsRepository.autoTranslateEnabled.value
+        settingsRepository.setAutoTranslateEnabled(turningOn)
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(autoTranslateEnabled = turningOn, vocabCalibration = if (turningOn) current.vocabCalibration else null)
+        }
+        if (turningOn) {
+            viewModelScope.launch { startVocabCalibration() }
+        } else {
+            unknownWordOccurrences = emptyList()
+        }
+    }
+
+    fun onCalibrationWordToggled(word: String) {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val calibration = current.vocabCalibration ?: return@update current
+            val selected = if (word in calibration.selected) calibration.selected - word else calibration.selected + word
+            current.copy(vocabCalibration = calibration.copy(selected = selected))
+        }
+    }
+
+    fun onCalibrationContinue() {
+        val calibration = (_uiState.value as? PlayerScreenState.Ready)?.vocabCalibration ?: return
+        viewModelScope.launch {
+            for (word in calibration.words) {
+                if (word in calibration.selected) wordKnowledgeRepository.markUnknown(word) else wordKnowledgeRepository.markKnown(word)
+            }
+            val selectionRate = calibration.selected.size.toDouble() / calibration.words.size
+            val nextTierRank = pendingDifficultyTiers.keys.filter { it < calibration.tierRank }.maxOrNull()
+            if (selectionRate >= AppDefaults.CALIBRATION_CASCADE_THRESHOLD && nextTierRank != null) {
+                val nextTierWords = undecidedWordsInTier(nextTierRank)
+                if (nextTierWords.isNotEmpty()) {
+                    openCalibrationTier(nextTierRank, nextTierWords)
+                    return@launch
+                }
+            }
+            finishCalibration()
+        }
+    }
+
+    fun dismissTranslationPopup() {
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(translationPopup = null) else current
+        }
+    }
+
+    fun onQuizPromptAnswer(startQuiz: Boolean) {
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(quizPrompt = false) else current
+        }
+        if (!startQuiz) {
+            advanceToNextEpisodeIfEnabled()
+            return
+        }
+        viewModelScope.launch {
+            val questions = buildQuizQuestions(pendingQuizWords)
+            if (questions.isEmpty()) {
+                advanceToNextEpisodeIfEnabled()
+                return@launch
+            }
+            _uiState.update { current ->
+                if (current is PlayerScreenState.Ready) current.copy(quiz = VocabQuizState(questions = questions)) else current
+            }
+        }
+    }
+
+    fun onQuizAnswerSelected(answer: String) {
+        val quiz = (_uiState.value as? PlayerScreenState.Ready)?.quiz ?: return
+        if (quiz.answeredThisQuestion != null) return
+        val question = quiz.questions.getOrNull(quiz.currentIndex) ?: return
+        val isCorrect = answer == question.correctAnswer
+        viewModelScope.launch {
+            if (isCorrect) wordKnowledgeRepository.markKnown(question.word)
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                val latestQuiz = current.quiz ?: return@update current
+                current.copy(
+                    quiz = latestQuiz.copy(
+                        answeredThisQuestion = answer,
+                        correctCount = latestQuiz.correctCount + if (isCorrect) 1 else 0,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun onQuizNext() {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val quiz = current.quiz ?: return@update current
+            val nextIndex = quiz.currentIndex + 1
+            val advanced = if (nextIndex >= quiz.questions.size) {
+                quiz.copy(finished = true)
+            } else {
+                quiz.copy(currentIndex = nextIndex, answeredThisQuestion = null)
+            }
+            current.copy(quiz = advanced)
+        }
+    }
+
+    fun onQuizDismissed() {
+        _uiState.update { current -> if (current is PlayerScreenState.Ready) current.copy(quiz = null) else current }
+        advanceToNextEpisodeIfEnabled()
     }
 
     fun seekTo(positionMs: Long) = playerController.seekTo(positionMs)
@@ -193,8 +330,16 @@ class PlayerViewModel @Inject constructor(
             sentences = sentences,
             words = words,
             hardWordModeEnabled = settingsRepository.hardWordModeEnabled.value,
+            autoTranslateEnabled = settingsRepository.autoTranslateEnabled.value,
         )
         podcastRepository.recordEpisodePlayed(episode.id)
+        // A fresh episode brings its own hardest words - if auto-translate is already on and this
+        // episode hasn't been calibrated before, offer it once. Without the vocabCalibrated guard
+        // this would re-prompt every time the player screen is recreated for the same episode
+        // (e.g. swipe-down-dismiss then reopening it), even after the user already went through
+        // calibration and is just listening - re-running this on the same episode is now only
+        // available via an explicit "Auto translate" chip tap (see toggleAutoTranslate).
+        if (settingsRepository.autoTranslateEnabled.value && !episode.vocabCalibrated) startVocabCalibration()
     }
 
     private fun handleTrigger(pauseTimeMs: Long) {
@@ -401,6 +546,126 @@ class PlayerViewModel @Inject constructor(
                 activeWord = null,
             )
         }
+    }
+
+    // --- Vocabulary trainer: calibration ---------------------------------------------------
+
+    /**
+     * Groups this episode's unique words by Oxford CEFR rank (5 = unranked/hardest .. 0 = A1),
+     * reusing the same proper-noun/punctuation filtering as hard-word mode - just applied to the
+     * whole episode instead of one sentence at a time.
+     */
+    private fun computeDifficultyTiers(words: List<WordTiming>): Map<Int, List<WordTiming>> {
+        val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
+        val ranked = WordDifficultyRanker.orderHardestFirst(
+            deduped,
+            wordDifficultyRepository::rankOf,
+            wordDifficultyRepository::isKnownWord,
+        )
+        return ranked.groupBy { wordDifficultyRepository.rankOf(it.word) }
+    }
+
+    /** Opens the calibration panel on the hardest tier with anything left to ask about, or just refreshes popup tracking if every tier is already decided. */
+    private suspend fun startVocabCalibration() {
+        // Offering it now (whether a panel actually opens or there's nothing new to ask) is what
+        // startPlayback's auto-trigger checks - it should only ever happen once per episode
+        // automatically; a later manual "Auto translate" chip tap can still re-invoke this.
+        podcastRepository.markEpisodeVocabCalibrated(episodeId)
+        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
+        pendingDifficultyTiers = computeDifficultyTiers(words)
+        for (rank in pendingDifficultyTiers.keys.sortedDescending()) {
+            val undecided = undecidedWordsInTier(rank)
+            if (undecided.isNotEmpty()) {
+                openCalibrationTier(rank, undecided)
+                return
+            }
+        }
+        refreshUnknownWordOccurrences()
+    }
+
+    /** This tier's words minus any that already have a known/unknown row - never re-ask about a decided word. */
+    private suspend fun undecidedWordsInTier(rank: Int): List<String> {
+        val tierWords = pendingDifficultyTiers[rank].orEmpty()
+        if (tierWords.isEmpty()) return emptyList()
+        val statuses = wordKnowledgeRepository.getStatuses(tierWords.map { it.word })
+        return tierWords.filter { WordNormalizer.normalize(it.word) !in statuses }.map { it.word }
+    }
+
+    private fun openCalibrationTier(rank: Int, words: List<String>) {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(vocabCalibration = VocabCalibrationState(tierRank = rank, words = words))
+        }
+    }
+
+    private suspend fun finishCalibration() {
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(vocabCalibration = null) else current
+        }
+        refreshUnknownWordOccurrences()
+    }
+
+    // --- Vocabulary trainer: silent in-playback popup ---------------------------------------
+
+    private suspend fun refreshUnknownWordOccurrences() {
+        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
+        val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
+        val statuses = wordKnowledgeRepository.getStatuses(deduped.map { it.word })
+        unknownWordOccurrences = deduped
+            .filter { statuses[WordNormalizer.normalize(it.word)]?.status == WordKnowledgeStatus.UNKNOWN }
+            .sortedBy { it.startMs }
+    }
+
+    /** Called on every position update while playing - fires at most once per word per playthrough, never pauses playback. */
+    private fun checkAutoTranslatePopup(positionMs: Long) {
+        val current = _uiState.value
+        if (current !is PlayerScreenState.Ready || !current.autoTranslateEnabled) return
+        val next = unknownWordOccurrences.firstOrNull {
+            it.startMs <= positionMs && WordNormalizer.normalize(it.word) !in firedUnknownWords
+        } ?: return
+        firedUnknownWords += WordNormalizer.normalize(next.word)
+        viewModelScope.launch {
+            val translation = wordKnowledgeRepository.getOrFetchTranslation(next.word) ?: return@launch
+            _uiState.update { latest ->
+                if (latest !is PlayerScreenState.Ready) return@update latest
+                latest.copy(translationPopup = WordTranslationPopup(next.word, translation))
+            }
+        }
+    }
+
+    // --- Vocabulary trainer: end-of-episode quiz ---------------------------------------------
+
+    private suspend fun unknownWordsInEpisode(): List<String> {
+        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
+        val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
+        val statuses = wordKnowledgeRepository.getStatuses(deduped.map { it.word })
+        return deduped
+            .filter { statuses[WordNormalizer.normalize(it.word)]?.status == WordKnowledgeStatus.UNKNOWN }
+            .map { it.word }
+    }
+
+    private fun advanceToNextEpisodeIfEnabled() {
+        val next = nextEpisodeId ?: return
+        if (settingsRepository.autoPlayNextEnabled.value) _navigateToEpisode.tryEmit(next)
+    }
+
+    /** One question per word: the real cached/fetched translation plus 3 distractors sampled from other real translations - never an LLM call. */
+    private suspend fun buildQuizQuestions(words: List<String>): List<VocabQuizQuestion> {
+        val questions = mutableListOf<VocabQuizQuestion>()
+        for (word in words) {
+            val correct = wordKnowledgeRepository.getOrFetchTranslation(word) ?: continue
+            val distractorCount = AppDefaults.QUIZ_OPTION_COUNT - 1
+            val distractors = wordKnowledgeRepository.sampleDistractors(word, distractorCount).toMutableSet()
+            if (distractors.size < distractorCount) {
+                val fallback = questions.map { it.correctAnswer }.filter { it != correct && it !in distractors }
+                distractors += fallback.shuffled().take(distractorCount - distractors.size)
+            }
+            // Not enough real wrong answers exist anywhere yet (e.g. this is the very first
+            // quiz ever) - skip rather than show a question with fewer than 4 options.
+            if (distractors.size < distractorCount) continue
+            questions += VocabQuizQuestion(word = word, correctAnswer = correct, options = (distractors + correct).shuffled())
+        }
+        return questions
     }
 
     override fun onCleared() {

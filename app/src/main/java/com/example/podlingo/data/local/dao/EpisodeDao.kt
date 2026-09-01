@@ -41,6 +41,9 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET lastPlayedEpochMs = :epochMs WHERE id = :id")
     suspend fun updateLastPlayed(id: String, epochMs: Long)
 
+    @Query("UPDATE episodes SET vocabCalibrated = 1 WHERE id = :id")
+    suspend fun markVocabCalibrated(id: String)
+
     @Query(
         """
         SELECT episodes.id AS id, episodes.title AS title, podcasts.title AS podcastTitle,

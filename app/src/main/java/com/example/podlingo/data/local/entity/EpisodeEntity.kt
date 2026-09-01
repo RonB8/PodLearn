@@ -28,4 +28,6 @@ data class EpisodeEntity(
     val transcriptStatus: TranscriptStatus = TranscriptStatus.NONE,
     val transcriptError: String? = null,
     val lastPlayedEpochMs: Long? = null,
+    /** Whether the vocabulary calibration panel has already been offered for this episode - once true, opening it again never auto-prompts, only an explicit "Auto translate" chip tap does. */
+    val vocabCalibrated: Boolean = false,
 )

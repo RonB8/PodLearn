@@ -31,4 +31,10 @@ object AppDefaults {
      * actually just heard was mostly the end of the last one.
      */
     const val MIN_HEARD_WORDS_BEFORE_SENTENCE_LOOKBACK = 2
+
+    /** In vocabulary calibration, marking at least this fraction of a tier's words "don't know" cascades to the next-easier tier. */
+    const val CALIBRATION_CASCADE_THRESHOLD = 0.9
+
+    /** Multiple-choice options per end-of-episode quiz question (1 correct + this-1 distractors). */
+    const val QUIZ_OPTION_COUNT = 4
 }

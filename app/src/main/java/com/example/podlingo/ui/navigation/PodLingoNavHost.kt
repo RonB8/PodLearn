@@ -33,6 +33,7 @@ import com.example.podlingo.ui.player.NowPlayingViewModel
 import com.example.podlingo.ui.player.PlayerScreen
 import com.example.podlingo.ui.playlists.PlaylistDetailScreen
 import com.example.podlingo.ui.settings.SettingsScreen
+import com.example.podlingo.ui.vocabulary.UnknownWordsScreen
 
 /** Argument-free top-level screens worth restoring to on a cold start (see [AppNavigationViewModel]). */
 private val RESTORABLE_ROUTES = setOf(Routes.MAIN, Routes.SETTINGS)
@@ -123,7 +124,13 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenUnknownWords = { navController.navigate(Routes.UNKNOWN_WORDS) { launchSingleTop = true } },
+                )
+            }
+            composable(Routes.UNKNOWN_WORDS) {
+                UnknownWordsScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = Routes.PLAYLIST_DETAIL,

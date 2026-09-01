@@ -3,6 +3,7 @@ package com.example.podlingo.data.repository
 import android.content.Context
 import com.example.podlingo.core.ElementaryFunctionWords
 import com.example.podlingo.core.EnglishStemmer
+import com.example.podlingo.core.WordNormalizer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +33,7 @@ class WordDifficultyRepository @Inject constructor(@ApplicationContext private v
 
     /** Lower is easier; [UNKNOWN_RANK] for words not in the Oxford lists (the hardest tier). */
     fun rankOf(word: String): Int {
-        val normalized = normalize(word)
+        val normalized = WordNormalizer.normalize(word)
         if (normalized.isEmpty()) return UNKNOWN_RANK
         if (ElementaryFunctionWords.contains(normalized)) return EASIEST_RANK
         levelRankByWord[normalized]?.let { return it }
@@ -62,9 +63,6 @@ class WordDifficultyRepository @Inject constructor(@ApplicationContext private v
         }
         return map
     }
-
-    private fun normalize(word: String): String =
-        word.lowercase().filter { it.isLetter() || it == '\'' || it == '-' }
 
     companion object {
         const val UNKNOWN_RANK = 5

@@ -2,14 +2,19 @@
 
 package com.example.podlingo.ui.settings
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -19,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -29,12 +35,14 @@ import com.example.podlingo.data.repository.ThemeMode
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenUnknownWords: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
     val autoFullSentenceEnabled by viewModel.autoFullSentenceEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val unknownWordCount by viewModel.unknownWordCount.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -105,6 +113,17 @@ fun SettingsScreen(
                         checked = autoPlayNextEnabled,
                         onCheckedChange = viewModel::setAutoPlayNextEnabled,
                     )
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUnknownWords),
+                headlineContent = { Text("Words you don't know") },
+                supportingContent = { Text("View and edit the words flagged for auto-translation.") },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(unknownWordCount.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = null)
+                    }
                 },
             )
         }
