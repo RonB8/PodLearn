@@ -95,6 +95,15 @@ class PlayerViewModel @Inject constructor(
                 if (settingsRepository.autoPlayNextEnabled.value) _navigateToEpisode.tryEmit(next)
             }
         }
+
+        viewModelScope.launch {
+            settingsRepository.hardWordModeEnabled.collect { enabled ->
+                _uiState.update { current ->
+                    if (current is PlayerScreenState.Ready) current.copy(hardWordModeEnabled = enabled) else current
+                }
+            }
+        }
+
     }
 
     fun togglePlayPause() {
@@ -118,6 +127,10 @@ class PlayerViewModel @Inject constructor(
             if (current !is PlayerScreenState.Ready) return@update current
             current.copy(transcriptVisible = !current.transcriptVisible)
         }
+    }
+
+    fun toggleHardWordMode() {
+        settingsRepository.setHardWordModeEnabled(!settingsRepository.hardWordModeEnabled.value)
     }
 
     fun seekTo(positionMs: Long) = playerController.seekTo(positionMs)
@@ -179,6 +192,7 @@ class PlayerViewModel @Inject constructor(
             hasNextEpisode = nextEpisodeId != null,
             sentences = sentences,
             words = words,
+            hardWordModeEnabled = settingsRepository.hardWordModeEnabled.value,
         )
         podcastRepository.recordEpisodePlayed(episode.id)
     }
@@ -214,7 +228,7 @@ class PlayerViewModel @Inject constructor(
                         return@launch
                     }
                     if (settingsRepository.hardWordModeEnabled.value) {
-                        handleHardWordTrigger(resolution.sentenceId, words, effectiveTimeMs)
+                        handleHardWordTrigger(resolution.sentenceId, sentence.fullText, words, effectiveTimeMs)
                     } else {
                         // Leaving hard-word mode's per-sentence progression - restart clean if
                         // it's ever re-entered on this sentence.
@@ -260,12 +274,33 @@ class PlayerViewModel @Inject constructor(
      * restarting; a trigger elsewhere starts a fresh sentence at its hardest word. The cycle
      * wraps back to the hardest word once every word has been shown.
      */
-    private suspend fun handleHardWordTrigger(sentenceId: String, allWords: List<WordTiming>, effectiveTimeMs: Long) {
+    private suspend fun handleHardWordTrigger(
+        sentenceId: String,
+        sentenceText: String,
+        allWords: List<WordTiming>,
+        effectiveTimeMs: Long,
+    ) {
         // Only words the user has actually heard by the time they paused are eligible - a hard
         // word later in the sentence that hasn't played yet can't be what they were confused by
         // (mirrors SentenceResolver's own "startMs <= effective time" rule for the same reason).
+        val heardInSentence = allWords.filter { it.sentenceId == sentenceId && it.startMs <= effectiveTimeMs }
+
+        // Barely anything of this sentence has played - what the user actually heard right before
+        // pausing is mostly the tail of the previous sentence, so fold that in too. Otherwise a
+        // trigger landing right at a sentence-boundary transcript split only sees the one or two
+        // words heard so far in the new sentence, even when the real hard word is the last word of
+        // the one before it.
+        val eligibleWords = if (heardInSentence.size < AppDefaults.MIN_HEARD_WORDS_BEFORE_SENTENCE_LOOKBACK) {
+            val firstWordIndex = allWords.indexOfFirst { it.sentenceId == sentenceId }
+            val previousSentenceId = allWords.getOrNull(firstWordIndex - 1)?.sentenceId
+            val previousSentenceWords = previousSentenceId?.let { id -> allWords.filter { it.sentenceId == id } }.orEmpty()
+            previousSentenceWords + heardInSentence
+        } else {
+            heardInSentence
+        }
+
         val ranked = WordDifficultyRanker.orderHardestFirst(
-            allWords.filter { it.sentenceId == sentenceId && it.startMs <= effectiveTimeMs },
+            eligibleWords,
             wordDifficultyRepository::rankOf,
             wordDifficultyRepository::isKnownWord,
         )
@@ -273,9 +308,34 @@ class PlayerViewModel @Inject constructor(
             playerController.resume()
             return
         }
+
+        val hardWordCount = ranked.count { wordDifficultyRepository.rankOf(it.word) >= AppDefaults.HARD_WORD_RANK_THRESHOLD }
+        if (settingsRepository.autoFullSentenceEnabled.value &&
+            hardWordCount >= AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT
+        ) {
+            // Too many hard words for one-at-a-time to be useful - translate the whole sentence
+            // instead, same as normal (non-hard-word) mode. Reset the per-sentence progression so
+            // a later re-trigger here (e.g. after toggling this setting off) starts clean.
+            hardWordSentenceId = null
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                current.copy(
+                    resolvedSentenceText = sentenceText,
+                    translatedSentenceText = null,
+                    isTranslating = true,
+                    noRelevantSentence = false,
+                    activeSentenceId = sentenceId,
+                    activeWord = null,
+                )
+            }
+            translateAndSpeak(sentenceText)
+            return
+        }
+
         hardWordIndex = if (hardWordSentenceId == sentenceId) (hardWordIndex + 1) % ranked.size else 0
         hardWordSentenceId = sentenceId
-        val targetWord = ranked[hardWordIndex].word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
+        val targetWordEntry = ranked[hardWordIndex]
+        val targetWord = targetWordEntry.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
         android.util.Log.d(
             "HARDWORDDEBUG",
             "sentenceId=$sentenceId index=$hardWordIndex/${ranked.size} target=$targetWord " +
@@ -289,7 +349,9 @@ class PlayerViewModel @Inject constructor(
                 translatedSentenceText = null,
                 isTranslating = true,
                 noRelevantSentence = false,
-                activeSentenceId = sentenceId,
+                // The target word may belong to the previous sentence (see eligibleWords above) -
+                // highlight wherever it actually is, not necessarily the trigger's own sentence.
+                activeSentenceId = targetWordEntry.sentenceId,
                 activeWord = targetWord,
             )
         }

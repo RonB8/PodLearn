@@ -3,6 +3,10 @@
 package com.example.podlingo.ui.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,8 +60,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +72,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -82,6 +90,7 @@ import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -91,6 +100,14 @@ fun PlayerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddToPlaylist by rememberSaveable { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
+    val screenHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    // Plain, synchronously-updated state rather than an Animatable driven through snapTo - the
+    // draggable modifier's per-delta callback isn't suspend, so routing every delta through a
+    // launched coroutine risks the release handler reading a stale, not-yet-updated value.
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         viewModel.navigateToEpisode.collect { episodeId -> onNavigateToEpisode(episodeId) }
@@ -102,6 +119,12 @@ fun PlayerScreen(
     }
 
     Scaffold(
+        modifier = Modifier
+            // The whole screen - app bar included - follows the finger down as one piece (see
+            // EpisodeArtwork's onDrag/onDragEnd below for where the drag is actually detected).
+            // Reading dragOffsetY inside the layer block keeps this to the draw phase, no
+            // recomposition per drag frame.
+            .graphicsLayer { translationY = dragOffsetY },
         topBar = {
             TopAppBar(
                 title = { Text(screenTitle(uiState)) },
@@ -126,9 +149,35 @@ fun PlayerScreen(
                     onSpeedSelected = viewModel::setPlaybackSpeed,
                     onSeek = viewModel::seekTo,
                     onDismissOverlay = viewModel::dismissSentenceOverlay,
-                    onSwipeDownDismiss = onBack,
+                    onDrag = { delta -> dragOffsetY = (dragOffsetY + delta).coerceAtLeast(0f) },
+                    onDragEnd = { velocity ->
+                        val pastThreshold = dragOffsetY > dismissThresholdPx
+                        val fastFling = velocity > FLING_DISMISS_VELOCITY_PX_PER_S
+                        if (pastThreshold || fastFling) {
+                            // Finish sliding the rest of the way off-screen before actually
+                            // popping the back stack, so there's no frame where it's still
+                            // visible (even partway down) after the finger lifts.
+                            coroutineScope.launch {
+                                animate(
+                                    initialValue = dragOffsetY,
+                                    targetValue = screenHeightPx,
+                                    animationSpec = tween(220),
+                                ) { value, _ -> dragOffsetY = value }
+                                onBack()
+                            }
+                        } else {
+                            coroutineScope.launch {
+                                animate(
+                                    initialValue = dragOffsetY,
+                                    targetValue = 0f,
+                                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                                ) { value, _ -> dragOffsetY = value }
+                            }
+                        }
+                    },
                     onToggleTranscript = viewModel::toggleTranscript,
                     onAddToPlaylist = { showAddToPlaylist = true },
+                    onToggleHardWordMode = viewModel::toggleHardWordMode,
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message)
             }
@@ -197,9 +246,11 @@ private fun ReadyPlayerView(
     onSpeedSelected: (Float) -> Unit,
     onSeek: (Long) -> Unit,
     onDismissOverlay: () -> Unit,
-    onSwipeDownDismiss: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: (velocity: Float) -> Unit,
     onToggleTranscript: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onToggleHardWordMode: () -> Unit,
 ) {
     val wordsBySentence = remember(state.words) { state.words.groupBy { it.sentenceId } }
 
@@ -219,7 +270,8 @@ private fun ReadyPlayerView(
                 isTranslating = state.isTranslating,
                 translatedSentenceText = state.translatedSentenceText,
                 onDismissOverlay = onDismissOverlay,
-                onSwipeDownDismiss = onSwipeDownDismiss,
+                onDrag = onDrag,
+                onDragEnd = onDragEnd,
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -227,6 +279,8 @@ private fun ReadyPlayerView(
             transcriptVisible = state.transcriptVisible,
             onToggleTranscript = onToggleTranscript,
             onAddToPlaylist = onAddToPlaylist,
+            hardWordModeEnabled = state.hardWordModeEnabled,
+            onToggleHardWordMode = onToggleHardWordMode,
         )
         Spacer(modifier = Modifier.height(20.dp))
         PlaybackControls(
@@ -253,8 +307,9 @@ private fun ReadyPlayerView(
 }
 
 /**
- * Dragging down past [SWIPE_DISMISS_THRESHOLD_DP] triggers [onSwipeDownDismiss] - the artwork is
- * the one large area on this screen with no other gesture (the slider below drags horizontally,
+ * Dragging down reports live deltas via [onDrag] and the release velocity via [onDragEnd] - the
+ * caller owns the actual dismiss threshold/animation (see [ReadyPlayerView]). The artwork is the
+ * one large area on this screen with no other gesture (the slider below drags horizontally,
  * buttons only tap), so it's the safe, conflict-free target for the "pull down to dismiss" swipe
  * standard in media players like Spotify.
  */
@@ -270,11 +325,9 @@ private fun EpisodeArtwork(
     isTranslating: Boolean,
     translatedSentenceText: String?,
     onDismissOverlay: () -> Unit,
-    onSwipeDownDismiss: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: (velocity: Float) -> Unit,
 ) {
-    val dismissThresholdPx = with(LocalDensity.current) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
-    var accumulatedDrag by remember { mutableStateOf(0f) }
-
     Box(
         modifier = Modifier
             .aspectRatio(1f, matchHeightConstraintsFirst = true)
@@ -288,11 +341,8 @@ private fun EpisodeArtwork(
                 } else {
                     base.draggable(
                         orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta -> accumulatedDrag += delta },
-                        onDragStopped = {
-                            if (accumulatedDrag > dismissThresholdPx) onSwipeDownDismiss()
-                            accumulatedDrag = 0f
-                        },
+                        state = rememberDraggableState { delta -> onDrag(delta) },
+                        onDragStopped = { velocity -> onDragEnd(velocity) },
                     )
                 }
             },
@@ -339,6 +389,8 @@ private fun PlayerActionRow(
     transcriptVisible: Boolean,
     onToggleTranscript: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    hardWordModeEnabled: Boolean,
+    onToggleHardWordMode: () -> Unit,
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -365,6 +417,20 @@ private fun PlayerActionRow(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+        }
+        item {
+            FilterChip(
+                selected = hardWordModeEnabled,
+                onClick = onToggleHardWordMode,
+                label = { Text("Hard word") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Translate,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -691,3 +757,6 @@ private fun formatMillis(millis: Long): String {
 }
 
 private const val SWIPE_DISMISS_THRESHOLD_DP = 96
+
+/** A quick downward flick dismisses even short of [SWIPE_DISMISS_THRESHOLD_DP], same as a fling-to-dismiss card. */
+private const val FLING_DISMISS_VELOCITY_PX_PER_S = 1200f

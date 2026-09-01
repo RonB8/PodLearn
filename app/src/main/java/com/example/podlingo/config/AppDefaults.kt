@@ -16,4 +16,19 @@ object AppDefaults {
      * (observed on-device); without this, a dropped callback would pause the episode forever.
      */
     const val TTS_WAIT_TIMEOUT_MS = 15_000L
+
+    /** Oxford CEFR rank (see [com.example.podlingo.data.repository.WordDifficultyRepository]) at or above which a word counts as "hard" - B2, C1, or unranked. */
+    const val HARD_WORD_RANK_THRESHOLD = 3
+
+    /** In hard-word mode, a sentence with at least this many hard words gets translated whole instead of one word at a time - past this density a single word stops being enough context. */
+    const val AUTO_FULL_SENTENCE_HARD_WORD_COUNT = 3
+
+    /**
+     * In hard-word mode, if fewer than this many words of the resolved sentence have been heard
+     * by the trigger's effective time, the tail of the *previous* sentence is pulled into the
+     * ranking pool too - otherwise a trigger landing right at a sentence boundary only has one or
+     * two (often trivial) words of the new sentence to choose from, even though what the user
+     * actually just heard was mostly the end of the last one.
+     */
+    const val MIN_HEARD_WORDS_BEFORE_SENTENCE_LOOKBACK = 2
 }

@@ -18,6 +18,12 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.setHardWordModeEnabled(enabled)
     }
 
+    val autoFullSentenceEnabled: StateFlow<Boolean> = settingsRepository.autoFullSentenceEnabled
+
+    fun setAutoFullSentenceEnabled(enabled: Boolean) {
+        settingsRepository.setAutoFullSentenceEnabled(enabled)
+    }
+
     val autoPlayNextEnabled: StateFlow<Boolean> = settingsRepository.autoPlayNextEnabled
 
     fun setAutoPlayNextEnabled(enabled: Boolean) {

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.config.AppDefaults
 import com.example.podlingo.data.repository.ThemeMode
 
 @Composable
@@ -31,6 +32,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
+    val autoFullSentenceEnabled by viewModel.autoFullSentenceEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
 
@@ -72,6 +74,23 @@ fun SettingsScreen(
                     Switch(
                         checked = hardWordModeEnabled,
                         onCheckedChange = viewModel::setHardWordModeEnabled,
+                    )
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text("Auto full-sentence for hard sentences") },
+                supportingContent = {
+                    Text(
+                        "Within hard-word mode: if a sentence has ${AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT} " +
+                            "or more hard words, translate the whole sentence instead of one word at a time.",
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = autoFullSentenceEnabled,
+                        onCheckedChange = viewModel::setAutoFullSentenceEnabled,
+                        enabled = hardWordModeEnabled,
                     )
                 },
             )

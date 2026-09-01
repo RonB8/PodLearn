@@ -26,6 +26,8 @@ sealed interface PlayerScreenState {
         val sentences: List<SentenceEntity> = emptyList(),
         val words: List<WordTiming> = emptyList(),
         val transcriptVisible: Boolean = false,
+        /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.hardWordModeEnabled]. */
+        val hardWordModeEnabled: Boolean = false,
         /** The sentence currently being read aloud by a trigger (translation overlay), if any. */
         val activeSentenceId: String? = null,
         /** Hard-word mode's specific target word within [activeSentenceId], if that's the active trigger. */
