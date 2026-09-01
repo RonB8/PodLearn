@@ -1,21 +1,28 @@
 package com.example.podlingo.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.podlingo.ui.episodelist.EpisodeListScreen
@@ -35,7 +42,18 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
     val nowPlayingViewModel: NowPlayingViewModel = hiltViewModel()
     val nowPlaying by nowPlayingViewModel.nowPlaying.collectAsStateWithLifecycle()
     val appNavigationViewModel: AppNavigationViewModel = hiltViewModel()
-    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    // currentBackStackEntryAsState() only reflects the *settled* (post-transition) entry - with
+    // the Player route's dismiss transition below taking a couple hundred ms, that would leave
+    // the mini-player/tab bar missing (or briefly showing) underneath while it plays. A
+    // destination-changed listener fires immediately, independent of how long that takes.
+    var currentRoute by remember { mutableStateOf(navController.currentDestination?.route) }
+    DisposableEffect(navController) {
+        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+            currentRoute = destination.route
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
+    }
     val pagerState = rememberPagerState(
         initialPage = appNavigationViewModel.lastTabIndex.coerceIn(0, 2),
     ) { 3 }
@@ -47,8 +65,9 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
         }
     }
     LaunchedEffect(currentRoute) {
-        if (currentRoute != null && currentRoute in RESTORABLE_ROUTES) {
-            appNavigationViewModel.rememberRoute(currentRoute)
+        val route = currentRoute
+        if (route != null && route in RESTORABLE_ROUTES) {
+            appNavigationViewModel.rememberRoute(route)
         }
     }
     LaunchedEffect(pagerState.currentPage) {
@@ -131,6 +150,13 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
             composable(
                 route = Routes.PLAYER,
                 arguments = listOf(navArgument("episodeId") { type = NavType.StringType }),
+                // The screen underneath (already fully composed - its own enter transition stays
+                // default/instant) is revealed as Player slides down and off; PlayerScreen's own
+                // swipe-down-dismiss drag hands off to this same transition mid-flight (see its
+                // onDragEnd) so the two motions read as one continuous slide, not two animations.
+                popExitTransition = {
+                    slideOutVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { fullHeight -> fullHeight }
+                },
             ) {
                 PlayerScreen(
                     onBack = { navController.popBackStack() },

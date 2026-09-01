@@ -6,7 +6,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -72,7 +71,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -101,9 +99,7 @@ fun PlayerScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddToPlaylist by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    val dismissThresholdPx = with(density) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
-    val screenHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val dismissThresholdPx = with(LocalDensity.current) { SWIPE_DISMISS_THRESHOLD_DP.dp.toPx() }
     // Plain, synchronously-updated state rather than an Animatable driven through snapTo - the
     // draggable modifier's per-delta callback isn't suspend, so routing every delta through a
     // launched coroutine risks the release handler reading a stale, not-yet-updated value.
@@ -154,17 +150,12 @@ fun PlayerScreen(
                         val pastThreshold = dragOffsetY > dismissThresholdPx
                         val fastFling = velocity > FLING_DISMISS_VELOCITY_PX_PER_S
                         if (pastThreshold || fastFling) {
-                            // Finish sliding the rest of the way off-screen before actually
-                            // popping the back stack, so there's no frame where it's still
-                            // visible (even partway down) after the finger lifts.
-                            coroutineScope.launch {
-                                animate(
-                                    initialValue = dragOffsetY,
-                                    targetValue = screenHeightPx,
-                                    animationSpec = tween(220),
-                                ) { value, _ -> dragOffsetY = value }
-                                onBack()
-                            }
+                            // Leave the drag offset exactly where it is and hand off straight to
+                            // the real back-navigation - its own exit transition (see
+                            // PodLingoNavHost) stacks on top of this offset and continues the
+                            // slide from there, revealing the actual screen underneath as it
+                            // goes, instead of resetting to 0 first (which would cause a snap).
+                            onBack()
                         } else {
                             coroutineScope.launch {
                                 animate(

@@ -9,8 +9,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.repository.SettingsRepository
 import com.example.podlingo.data.repository.ThemeMode
@@ -38,6 +40,15 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+            // enableEdgeToEdge() only picks status/nav bar icon contrast from the system theme at
+            // launch - it never tracks the app's own Light/Dark override, so choosing Light while
+            // the system is in Dark (or vice versa) left the icons using the wrong, invisible
+            // contrast. Re-applying this on every theme change keeps it in sync.
+            SideEffect {
+                val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.isAppearanceLightStatusBars = !darkTheme
+                insetsController.isAppearanceLightNavigationBars = !darkTheme
             }
             PodLingoTheme(darkTheme = darkTheme) {
                 PodLingoNavHost()
