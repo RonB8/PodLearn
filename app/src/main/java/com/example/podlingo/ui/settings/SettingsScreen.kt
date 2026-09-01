@@ -41,6 +41,7 @@ fun SettingsScreen(
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
     val autoFullSentenceEnabled by viewModel.autoFullSentenceEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
+    val autoTranslateReadAloudEnabled by viewModel.autoTranslateReadAloudEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val unknownWordCount by viewModel.unknownWordCount.collectAsStateWithLifecycle()
 
@@ -112,6 +113,23 @@ fun SettingsScreen(
                     Switch(
                         checked = autoPlayNextEnabled,
                         onCheckedChange = viewModel::setAutoPlayNextEnabled,
+                    )
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text("Read auto-translated words aloud") },
+                supportingContent = {
+                    Text(
+                        "When Auto translate finds a word you don't know, pause and read it aloud " +
+                            "like the manual trigger does - just the word if hard-word mode is on, " +
+                            "or the whole sentence otherwise.",
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = autoTranslateReadAloudEnabled,
+                        onCheckedChange = viewModel::setAutoTranslateReadAloudEnabled,
                     )
                 },
             )

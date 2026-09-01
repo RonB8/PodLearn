@@ -40,6 +40,12 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.setAutoPlayNextEnabled(enabled)
     }
 
+    val autoTranslateReadAloudEnabled: StateFlow<Boolean> = settingsRepository.autoTranslateReadAloudEnabled
+
+    fun setAutoTranslateReadAloudEnabled(enabled: Boolean) {
+        settingsRepository.setAutoTranslateReadAloudEnabled(enabled)
+    }
+
     val themeMode: StateFlow<ThemeMode> = settingsRepository.themeMode
 
     fun setThemeMode(mode: ThemeMode) {

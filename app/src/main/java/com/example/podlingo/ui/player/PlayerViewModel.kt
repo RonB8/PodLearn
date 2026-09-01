@@ -339,7 +339,16 @@ class PlayerViewModel @Inject constructor(
         // (e.g. swipe-down-dismiss then reopening it), even after the user already went through
         // calibration and is just listening - re-running this on the same episode is now only
         // available via an explicit "Auto translate" chip tap (see toggleAutoTranslate).
-        if (settingsRepository.autoTranslateEnabled.value && !episode.vocabCalibrated) startVocabCalibration()
+        if (settingsRepository.autoTranslateEnabled.value) {
+            if (!episode.vocabCalibrated) {
+                startVocabCalibration()
+            } else {
+                // Already calibrated in an earlier session - unknownWordOccurrences is per-instance
+                // state (this is a fresh ViewModel), so it needs repopulating here or the popup/
+                // read-aloud would silently never fire again on this episode.
+                refreshUnknownWordOccurrences()
+            }
+        }
     }
 
     private fun handleTrigger(pauseTimeMs: Long) {
@@ -503,9 +512,12 @@ class PlayerViewModel @Inject constructor(
         translateAndSpeak(targetWord, speakEnglishFirst = true)
     }
 
-    private suspend fun translateAndSpeak(englishText: String, speakEnglishFirst: Boolean = false) {
-        val result = translationRepository.translateToHebrew(englishText)
-        val translated = result.getOrNull()
+    private suspend fun translateAndSpeak(
+        englishText: String,
+        speakEnglishFirst: Boolean = false,
+        translate: suspend () -> String? = { translationRepository.translateToHebrew(englishText).getOrNull() },
+    ) {
+        val translated = translate()
         var stillRelevant = false
         _uiState.update { current ->
             if (current !is PlayerScreenState.Ready) return@update current
@@ -616,7 +628,7 @@ class PlayerViewModel @Inject constructor(
             .sortedBy { it.startMs }
     }
 
-    /** Called on every position update while playing - fires at most once per word per playthrough, never pauses playback. */
+    /** Called on every position update while playing - fires at most once per word per playthrough. */
     private fun checkAutoTranslatePopup(positionMs: Long) {
         val current = _uiState.value
         if (current !is PlayerScreenState.Ready || !current.autoTranslateEnabled) return
@@ -624,12 +636,64 @@ class PlayerViewModel @Inject constructor(
             it.startMs <= positionMs && WordNormalizer.normalize(it.word) !in firedUnknownWords
         } ?: return
         firedUnknownWords += WordNormalizer.normalize(next.word)
-        viewModelScope.launch {
-            val translation = wordKnowledgeRepository.getOrFetchTranslation(next.word) ?: return@launch
-            _uiState.update { latest ->
-                if (latest !is PlayerScreenState.Ready) return@update latest
-                latest.copy(translationPopup = WordTranslationPopup(next.word, translation))
+        if (settingsRepository.autoTranslateReadAloudEnabled.value) {
+            viewModelScope.launch { speakAutoTranslatedWord(next) }
+        } else {
+            viewModelScope.launch {
+                val translation = wordKnowledgeRepository.getOrFetchTranslation(next.word) ?: return@launch
+                _uiState.update { latest ->
+                    if (latest !is PlayerScreenState.Ready) return@update latest
+                    latest.copy(translationPopup = WordTranslationPopup(next.word, translation))
+                }
             }
+        }
+    }
+
+    /**
+     * Read-aloud variant of the auto-translate popup: pauses playback and speaks through the same
+     * overlay/TTS path the manual trigger uses, instead of the silent banner. Hard-word mode
+     * restricts this to just the unknown word (English then Hebrew, using the word-knowledge
+     * cache so a word already looked up never costs a second OpenAI call); otherwise the whole
+     * sentence it appears in is read (Hebrew only, same as the manual trigger's own sentence
+     * mode - sentence translations aren't cached, matching existing trigger behavior).
+     */
+    private suspend fun speakAutoTranslatedWord(occurrence: WordTiming) {
+        playerController.pause()
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
+        }
+        if (settingsRepository.hardWordModeEnabled.value) {
+            val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                current.copy(
+                    resolvedSentenceText = word,
+                    translatedSentenceText = null,
+                    isTranslating = true,
+                    noRelevantSentence = false,
+                    activeSentenceId = occurrence.sentenceId,
+                    activeWord = word,
+                )
+            }
+            translateAndSpeak(word, speakEnglishFirst = true) { wordKnowledgeRepository.getOrFetchTranslation(word) }
+        } else {
+            val sentence = transcriptRepository.getSentence(occurrence.sentenceId)
+            if (sentence == null) {
+                playerController.resume()
+                return
+            }
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                current.copy(
+                    resolvedSentenceText = sentence.fullText,
+                    translatedSentenceText = null,
+                    isTranslating = true,
+                    noRelevantSentence = false,
+                    activeSentenceId = sentence.id,
+                    activeWord = null,
+                )
+            }
+            translateAndSpeak(sentence.fullText)
         }
     }
 
