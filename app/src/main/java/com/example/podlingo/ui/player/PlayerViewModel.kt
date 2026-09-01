@@ -628,12 +628,28 @@ class PlayerViewModel @Inject constructor(
             .sortedBy { it.startMs }
     }
 
-    /** Called on every position update while playing - fires at most once per word per playthrough. */
+    /**
+     * Called on every position update while playing - fires at most once per word per playthrough.
+     * Scoped to the sentence currently at [positionMs] only - after backgrounding/seeking far
+     * ahead, this deliberately does NOT "catch up" on unknown words from sentences already passed;
+     * it only ever surfaces words from the sentence actually being heard right now. If the user
+     * later scrubs back into an earlier sentence, its words become eligible again naturally.
+     *
+     * Both checks use [positionMs] minus [AppDefaults.REACTION_DELAY_MS] as the effective time,
+     * not the raw position - firing right at a word's startMs pauses/reads it before it's finished
+     * being spoken. Deriving the current sentence from that same delayed reference (rather than the
+     * raw position) keeps a word eligible under its own sentence even when it falls right at a
+     * sentence boundary, instead of the delay alone pushing "current sentence" into the next one.
+     */
     private fun checkAutoTranslatePopup(positionMs: Long) {
         val current = _uiState.value
         if (current !is PlayerScreenState.Ready || !current.autoTranslateEnabled) return
+        val effectiveTimeMs = positionMs - AppDefaults.REACTION_DELAY_MS
+        val currentSentenceId = current.sentences.lastOrNull { it.startMs <= effectiveTimeMs }?.id ?: return
         val next = unknownWordOccurrences.firstOrNull {
-            it.startMs <= positionMs && WordNormalizer.normalize(it.word) !in firedUnknownWords
+            it.sentenceId == currentSentenceId &&
+                it.startMs <= effectiveTimeMs &&
+                WordNormalizer.normalize(it.word) !in firedUnknownWords
         } ?: return
         firedUnknownWords += WordNormalizer.normalize(next.word)
         if (settingsRepository.autoTranslateReadAloudEnabled.value) {
