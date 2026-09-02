@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,11 +20,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.local.entity.TranscriptStatus
+import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 
 @Composable
 fun EpisodeListScreen(
@@ -32,6 +37,11 @@ fun EpisodeListScreen(
     viewModel: EpisodeListViewModel = hiltViewModel(),
 ) {
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
+    var addToPlaylistEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    addToPlaylistEpisodeId?.let { episodeId ->
+        AddToPlaylistDialog(episodeId = episodeId, onDismiss = { addToPlaylistEpisodeId = null })
+    }
 
     Scaffold(
         topBar = {
@@ -55,6 +65,11 @@ fun EpisodeListScreen(
                     ListItem(
                         headlineContent = { Text(episode.title) },
                         supportingContent = { Text(transcriptStatusLabel(episode.transcriptStatus)) },
+                        trailingContent = {
+                            IconButton(onClick = { addToPlaylistEpisodeId = episode.id }) {
+                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
+                            }
+                        },
                         modifier = Modifier.clickable { onOpenEpisode(episode.id) },
                     )
                     HorizontalDivider()

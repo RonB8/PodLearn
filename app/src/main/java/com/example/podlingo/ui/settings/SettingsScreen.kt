@@ -2,6 +2,7 @@
 
 package com.example.podlingo.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -26,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -71,69 +76,35 @@ fun SettingsScreen(
                     )
                 },
             )
-            ListItem(
-                modifier = Modifier.fillMaxWidth(),
-                headlineContent = { Text("Translate hardest word only") },
-                supportingContent = {
-                    Text(
-                        "On trigger, translate just the hardest word in the sentence " +
-                            "(by Oxford CEFR level). Trigger again right away on the same " +
-                            "sentence to reveal the next-hardest word.",
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        checked = hardWordModeEnabled,
-                        onCheckedChange = viewModel::setHardWordModeEnabled,
-                    )
-                },
+            SettingsToggleItem(
+                title = "Translate hardest word only",
+                description = "On trigger, translate just the hardest word in the sentence " +
+                    "(by Oxford CEFR level). Trigger again right away on the same " +
+                    "sentence to reveal the next-hardest word.",
+                checked = hardWordModeEnabled,
+                onCheckedChange = viewModel::setHardWordModeEnabled,
             )
-            ListItem(
-                modifier = Modifier.fillMaxWidth(),
-                headlineContent = { Text("Auto full-sentence for hard sentences") },
-                supportingContent = {
-                    Text(
-                        "Within hard-word mode: if a sentence has ${AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT} " +
-                            "or more hard words, translate the whole sentence instead of one word at a time.",
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        checked = autoFullSentenceEnabled,
-                        onCheckedChange = viewModel::setAutoFullSentenceEnabled,
-                        enabled = hardWordModeEnabled,
-                    )
-                },
+            SettingsToggleItem(
+                title = "Auto full-sentence for hard sentences",
+                description = "Within hard-word mode: if a sentence has ${AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT} " +
+                    "or more hard words, translate the whole sentence instead of one word at a time.",
+                checked = autoFullSentenceEnabled,
+                onCheckedChange = viewModel::setAutoFullSentenceEnabled,
+                switchEnabled = hardWordModeEnabled,
             )
-            ListItem(
-                modifier = Modifier.fillMaxWidth(),
-                headlineContent = { Text("Auto-play next episode") },
-                supportingContent = {
-                    Text("When an episode finishes, automatically start the next one in the podcast.")
-                },
-                trailingContent = {
-                    Switch(
-                        checked = autoPlayNextEnabled,
-                        onCheckedChange = viewModel::setAutoPlayNextEnabled,
-                    )
-                },
+            SettingsToggleItem(
+                title = "Auto-play next episode",
+                description = "When an episode finishes, automatically start the next one in the podcast.",
+                checked = autoPlayNextEnabled,
+                onCheckedChange = viewModel::setAutoPlayNextEnabled,
             )
-            ListItem(
-                modifier = Modifier.fillMaxWidth(),
-                headlineContent = { Text("Read auto-translated words aloud") },
-                supportingContent = {
-                    Text(
-                        "When Auto translate finds a word you don't know, pause and read it aloud " +
-                            "like the manual trigger does - just the word if hard-word mode is on, " +
-                            "or the whole sentence otherwise.",
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        checked = autoTranslateReadAloudEnabled,
-                        onCheckedChange = viewModel::setAutoTranslateReadAloudEnabled,
-                    )
-                },
+            SettingsToggleItem(
+                title = "Read auto-translated words aloud",
+                description = "When Auto translate finds a word you don't know, pause and read it aloud " +
+                    "like the manual trigger does - just the word if hard-word mode is on, " +
+                    "or the whole sentence otherwise.",
+                checked = autoTranslateReadAloudEnabled,
+                onCheckedChange = viewModel::setAutoTranslateReadAloudEnabled,
             )
             ListItem(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUnknownWords),
@@ -145,6 +116,43 @@ fun SettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = null)
                     }
                 },
+            )
+        }
+    }
+}
+
+/**
+ * A toggle setting whose explanatory [description] stays collapsed until the info icon is tapped,
+ * so the settings list reads as a short list of titles rather than a wall of paragraphs.
+ */
+@Composable
+private fun SettingsToggleItem(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    switchEnabled: Boolean = true,
+) {
+    var infoExpanded by remember { mutableStateOf(false) }
+    Column {
+        ListItem(
+            modifier = Modifier.fillMaxWidth(),
+            headlineContent = { Text(title) },
+            trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { infoExpanded = !infoExpanded }) {
+                        Icon(Icons.Outlined.Info, contentDescription = "About $title")
+                    }
+                    Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = switchEnabled)
+                }
+            },
+        )
+        AnimatedVisibility(visible = infoExpanded) {
+            Text(
+                text = description,
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

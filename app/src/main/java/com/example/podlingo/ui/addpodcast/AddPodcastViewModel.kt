@@ -96,6 +96,18 @@ class AddPodcastViewModel @Inject constructor(
     }
 
     /**
+     * Called once the navigation triggered by a [AddPodcastUiState.Success] has actually
+     * happened, so returning to this screen (e.g. via back navigation) doesn't find [addState]
+     * still sitting on that same Success value and immediately re-fire the navigation - trapping
+     * back navigation in a loop straight back to the episode list it just came from.
+     */
+    fun consumeAddResult() {
+        if (_addState.value is AddPodcastUiState.Success) {
+            _addState.value = AddPodcastUiState.Idle
+        }
+    }
+
+    /**
      * Selecting an already-added result skips the network round-trip entirely (it would just
      * re-fetch and re-upsert the same feed) and resolves straight from the local DB.
      */

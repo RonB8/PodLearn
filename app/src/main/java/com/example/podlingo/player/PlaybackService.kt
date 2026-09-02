@@ -3,6 +3,8 @@ package com.example.podlingo.player
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.SystemClock
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
@@ -37,7 +39,18 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build()
+        // ExoPlayer.Builder does NOT request/handle audio focus by default - without this, an
+        // incoming call or another app starting playback never paused us, since we never told
+        // Android we wanted focus in the first place (so we never got told we lost it).
+        val player = ExoPlayer.Builder(this)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+                    .build(),
+                /* handleAudioFocus= */ true,
+            )
+            .build()
         // Without this, tapping the media notification/lock-screen player does nothing - a
         // MediaSession has no default "open the app" action, it has to be told what to launch.
         val sessionActivity = PendingIntent.getActivity(

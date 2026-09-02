@@ -9,6 +9,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -62,6 +63,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -282,7 +284,28 @@ private fun ReadyPlayerView(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                // Applied to the whole allocated region rather than just the (possibly narrower,
+                // height-constrained-square) artwork inside it - swiping down anywhere in this area,
+                // including any side margin around the artwork, dismisses the player. Swiping to
+                // scroll the transcript and swiping to dismiss both read vertical drags here, so the
+                // dismiss gesture only listens while the transcript is hidden.
+                .let { base ->
+                    if (state.transcriptVisible) {
+                        base
+                    } else {
+                        base.draggable(
+                            orientation = Orientation.Vertical,
+                            state = rememberDraggableState { delta -> onDrag(delta) },
+                            onDragStopped = { velocity -> onDragEnd(velocity) },
+                        )
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             EpisodeArtwork(
                 artworkUrl = state.artworkUrl,
                 transcriptVisible = state.transcriptVisible,
@@ -294,8 +317,7 @@ private fun ReadyPlayerView(
                 isTranslating = state.isTranslating,
                 translatedSentenceText = state.translatedSentenceText,
                 onDismissOverlay = onDismissOverlay,
-                onDrag = onDrag,
-                onDragEnd = onDragEnd,
+                onSentenceClick = { sentence -> onSeek(sentence.startMs) },
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -344,11 +366,9 @@ private fun ReadyPlayerView(
 }
 
 /**
- * Dragging down reports live deltas via [onDrag] and the release velocity via [onDragEnd] - the
- * caller owns the actual dismiss threshold/animation (see [ReadyPlayerView]). The artwork is the
- * one large area on this screen with no other gesture (the slider below drags horizontally,
- * buttons only tap), so it's the safe, conflict-free target for the "pull down to dismiss" swipe
- * standard in media players like Spotify.
+ * The pull-down-to-dismiss drag itself is handled by the caller's enclosing [Box] (see
+ * [ReadyPlayerView]) so the gesture responds across that whole allocated region, not just this
+ * (possibly narrower, height-constrained-square) artwork area.
  */
 @Composable
 private fun EpisodeArtwork(
@@ -362,27 +382,13 @@ private fun EpisodeArtwork(
     isTranslating: Boolean,
     translatedSentenceText: String?,
     onDismissOverlay: () -> Unit,
-    onDrag: (Float) -> Unit,
-    onDragEnd: (velocity: Float) -> Unit,
+    onSentenceClick: (SentenceEntity) -> Unit,
 ) {
     Box(
         modifier = Modifier
             .aspectRatio(1f, matchHeightConstraintsFirst = true)
             .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            // Swiping to scroll the transcript and swiping to dismiss both read vertical drags on
-            // this same box, so the dismiss gesture only listens while the transcript is hidden.
-            .let { base ->
-                if (transcriptVisible) {
-                    base
-                } else {
-                    base.draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta -> onDrag(delta) },
-                        onDragStopped = { velocity -> onDragEnd(velocity) },
-                    )
-                }
-            },
+            .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         // Kept underneath as a fallback: shows through if there's no artwork, or it fails to load.
@@ -415,6 +421,7 @@ private fun EpisodeArtwork(
                     isTranslating = isTranslating,
                     translatedSentenceText = translatedSentenceText,
                     onDismissOverlay = onDismissOverlay,
+                    onSentenceClick = onSentenceClick,
                 )
             }
         }
@@ -510,6 +517,7 @@ private fun TranscriptView(
     isTranslating: Boolean,
     translatedSentenceText: String?,
     onDismissOverlay: () -> Unit,
+    onSentenceClick: (SentenceEntity) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val highlightedSentenceId = activeSentenceId
@@ -556,6 +564,7 @@ private fun TranscriptView(
                     highlightWeight = if (isTriggerDriven) FontWeight.Black else FontWeight.Bold,
                 ),
                 style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.clickable { onSentenceClick(sentence) },
             )
         }
 
@@ -676,6 +685,15 @@ private fun PlaybackControls(
             isDragging = false
         },
         valueRange = 0f..durationMs.toFloat(),
+        // The theme's secondaryContainer is pinned to a bold purple for selected-state contrast
+        // elsewhere (tab bar, chip selection) - the seek bar isn't a "selected" indicator and reads
+        // better in the neutral grey it had before that change, so it gets its own explicit colors
+        // instead of the Slider's theme defaults.
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            activeTrackColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
         modifier = Modifier.fillMaxWidth(),
     )
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -985,7 +1003,7 @@ private fun SpeedButton(currentSpeed: Float, onSpeedSelected: (Float) -> Unit, m
 private fun formatSpeed(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}.0x" else "${speed}x"
 
-private val SPEED_OPTIONS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 private fun formatMillis(millis: Long): String {
     val totalSeconds = millis / 1000

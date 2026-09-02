@@ -46,6 +46,10 @@ fun SearchContent(
         val state = addState
         if (state is AddPodcastUiState.Success) {
             onAdded(state.podcastId)
+            // Otherwise addState is still Success the moment this screen is recomposed (e.g. after
+            // navigating back from the episode list this just opened), and this effect fires again
+            // immediately - re-navigating forward and making back navigation look like it does nothing.
+            viewModel.consumeAddResult()
         }
     }
 
