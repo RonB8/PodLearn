@@ -191,6 +191,17 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** Toggles between selecting every word in this tier and clearing the selection - handy when most of the tier is unfamiliar, so the user can select all and then tap off the few they do know. */
+    fun onCalibrationSelectAllToggled() {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val calibration = current.vocabCalibration ?: return@update current
+            val allSelected = calibration.selected.size == calibration.words.size
+            val selected = if (allSelected) emptySet() else calibration.words.toSet()
+            current.copy(vocabCalibration = calibration.copy(selected = selected))
+        }
+    }
+
     fun onCalibrationContinue() {
         val calibration = (_uiState.value as? PlayerScreenState.Ready)?.vocabCalibration ?: return
         viewModelScope.launch {

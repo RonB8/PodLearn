@@ -130,6 +130,7 @@ fun PlayerScreen(
         VocabCalibrationDialog(
             calibration = calibration,
             onWordToggled = viewModel::onCalibrationWordToggled,
+            onSelectAllToggled = viewModel::onCalibrationSelectAllToggled,
             onContinue = viewModel::onCalibrationContinue,
         )
     }
@@ -845,6 +846,7 @@ private fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () ->
 private fun VocabCalibrationDialog(
     calibration: VocabCalibrationState,
     onWordToggled: (String) -> Unit,
+    onSelectAllToggled: () -> Unit,
     onContinue: () -> Unit,
 ) {
     Dialog(onDismissRequest = onContinue) {
@@ -875,8 +877,13 @@ private fun VocabCalibrationDialog(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                     )
+                    // Handy when most of the tier is unfamiliar - select everything, then tap off
+                    // the few words already known, instead of tapping every unfamiliar one.
+                    TextButton(onClick = onSelectAllToggled, modifier = Modifier.align(Alignment.End)) {
+                        Text(if (calibration.selected.size == calibration.words.size) "Deselect all" else "Select all")
+                    }
                     // Capped and independently scrollable so a long word list can never push the
                     // Continue button itself off-screen - the header and button always stay put.
                     FlowRow(

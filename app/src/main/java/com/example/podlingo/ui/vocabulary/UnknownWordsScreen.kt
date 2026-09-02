@@ -61,7 +61,17 @@ fun UnknownWordsScreen(
                 items(words, key = { it.word }) { entry ->
                     ListItem(
                         headlineContent = { Text(entry.word) },
-                        supportingContent = entry.hebrewTranslation?.let { translation -> { Text(translation) } },
+                        supportingContent = {
+                            val translation = entry.hebrewTranslation
+                            if (translation != null) {
+                                Text(translation)
+                            } else {
+                                Text(
+                                    "Translating…",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
                         trailingContent = {
                             IconButton(onClick = { viewModel.markKnown(entry.word) }) {
                                 Icon(Icons.Filled.Close, contentDescription = "I know this word now")

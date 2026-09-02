@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.podlingo.core.Mp3ChunkerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-08-19T16:58:15.956Z" hostname="RONB" time="0.437">
+<testsuite name="com.example.podlingo.core.Mp3ChunkerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-01T12:27:45.056Z" hostname="RONB" time="0.02">
   <properties/>
-  <testcase name="packs whole frames into chunks under the byte cap" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.433"/>
-  <testcase name="each chunk's start time is the sum of prior frame durations" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.001"/>
-  <testcase name="all frames fitting under the cap yields a single chunk" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.001"/>
+  <testcase name="packs whole frames into chunks under the byte cap" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.019"/>
+  <testcase name="each chunk's start time is the sum of prior frame durations" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.0"/>
+  <testcase name="all frames fitting under the cap yields a single chunk" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.0"/>
   <testcase name="an empty frame list yields no chunks" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.0"/>
-  <testcase name="a single frame larger than the cap still becomes its own chunk" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.001"/>
+  <testcase name="a single frame larger than the cap still becomes its own chunk" classname="com.example.podlingo.core.Mp3ChunkerTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
