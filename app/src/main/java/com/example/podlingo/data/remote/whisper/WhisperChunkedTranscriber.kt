@@ -67,7 +67,19 @@ class WhisperChunkedTranscriber @Inject constructor(
         val responseFormatPart = "verbose_json".toRequestBody("text/plain".toMediaType())
         val wordGranularityPart = "word".toRequestBody("text/plain".toMediaType())
         val segmentGranularityPart = "segment".toRequestBody("text/plain".toMediaType())
-        return whisperApi.transcribe(filePart, modelPart, responseFormatPart, wordGranularityPart, segmentGranularityPart)
+        // Without this, Whisper auto-detects the spoken language per request - which for a long
+        // episode split into chunks can misfire on any chunk that's short on clear speech (music,
+        // a sponsor read, an intro), transcribing it in the wrong language entirely. This app is
+        // specifically for English learners, so the source language is never actually ambiguous.
+        val languagePart = "en".toRequestBody("text/plain".toMediaType())
+        return whisperApi.transcribe(
+            filePart,
+            modelPart,
+            responseFormatPart,
+            wordGranularityPart,
+            segmentGranularityPart,
+            languagePart,
+        )
     }
 
     companion object {

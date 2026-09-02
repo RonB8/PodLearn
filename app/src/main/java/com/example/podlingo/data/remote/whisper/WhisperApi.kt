@@ -22,5 +22,6 @@ interface WhisperApi {
         @Part("response_format") responseFormat: RequestBody,
         @Part("timestamp_granularities[]") wordGranularity: RequestBody,
         @Part("timestamp_granularities[]") segmentGranularity: RequestBody,
+        @Part("language") language: RequestBody,
     ): WhisperTranscriptionResponse
 }
