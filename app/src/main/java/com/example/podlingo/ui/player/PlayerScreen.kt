@@ -419,22 +419,26 @@ private fun EpisodeArtwork(
             )
         }
         AnimatedVisibility(visible = transcriptVisible, modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.68f)),
-            ) {
-                TranscriptView(
-                    sentences = sentences,
-                    wordsBySentence = wordsBySentence,
-                    positionMs = positionMs,
-                    activeSentenceId = activeSentenceId,
-                    activeWord = activeWord,
-                    isTranslating = isTranslating,
-                    translatedSentenceText = translatedSentenceText,
-                    onDismissOverlay = onDismissOverlay,
-                    onSentenceClick = onSentenceClick,
-                )
+            // The transcript is always English (the podcast's own speech), so it keeps reading
+            // left-to-right regardless of app language - only the chrome around it mirrors.
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.68f)),
+                ) {
+                    TranscriptView(
+                        sentences = sentences,
+                        wordsBySentence = wordsBySentence,
+                        positionMs = positionMs,
+                        activeSentenceId = activeSentenceId,
+                        activeWord = activeWord,
+                        isTranslating = isTranslating,
+                        translatedSentenceText = translatedSentenceText,
+                        onDismissOverlay = onDismissOverlay,
+                        onSentenceClick = onSentenceClick,
+                    )
+                }
             }
         }
     }
@@ -586,6 +590,10 @@ private fun TranscriptView(
                 TranslationPanel(
                     isTranslating = isTranslating,
                     translatedText = translatedSentenceText,
+                    // Only set for hard-word mode's single-word trigger (see PlayerScreenState.activeWord) -
+                    // the full-sentence case leaves this null since the original sentence is already
+                    // visible, un-obscured, in the transcript line right above this panel.
+                    originalWord = activeWord,
                     onDismiss = onDismissOverlay,
                 )
             }
@@ -636,7 +644,12 @@ private fun buildSentenceAnnotatedString(
  * covering rather than competing with what comes next in the episode.
  */
 @Composable
-private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, onDismiss: () -> Unit) {
+private fun TranslationPanel(
+    isTranslating: Boolean,
+    translatedText: String?,
+    originalWord: String?,
+    onDismiss: () -> Unit,
+) {
     val strings = LocalAppStrings.current
     Column(
         modifier = Modifier
@@ -652,21 +665,33 @@ private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, on
             }
         }
         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            if (translatedText != null) {
-                Text(
-                    text = translatedText,
-                    color = Color.White,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-            } else {
-                Text(
-                    text = strings.translatingEllipsis,
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (originalWord != null) {
+                    Text(
+                        text = originalWord,
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (translatedText != null) {
+                    Text(
+                        text = translatedText,
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                } else {
+                    Text(
+                        text = strings.translatingEllipsis,
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }
