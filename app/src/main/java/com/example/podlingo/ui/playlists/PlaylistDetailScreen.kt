@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.ui.common.ArtworkThumbnail
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun PlaylistDetailScreen(
@@ -33,16 +34,17 @@ fun PlaylistDetailScreen(
     onBack: () -> Unit,
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val playlistName by viewModel.playlistName.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(playlistName.ifBlank { "Playlist" }) },
+                title = { Text(playlistName.ifBlank { strings.playlistFallbackTitle }) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -54,7 +56,7 @@ fun PlaylistDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No episodes in this playlist yet. Add some from the player screen.",
+                    text = strings.noEpisodesInPlaylist,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -66,7 +68,7 @@ fun PlaylistDetailScreen(
                         headlineContent = { Text(episode.title) },
                         trailingContent = {
                             IconButton(onClick = { viewModel.removeEpisode(episode.id) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remove from playlist")
+                                Icon(Icons.Filled.Close, contentDescription = strings.removeFromPlaylistContentDescription)
                             }
                         },
                         modifier = Modifier.clickable { onOpenEpisode(episode.id) },

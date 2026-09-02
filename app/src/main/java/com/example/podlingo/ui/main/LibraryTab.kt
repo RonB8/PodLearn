@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.podlingo.ui.playlists.PlaylistsContent
 import com.example.podlingo.ui.podcastlist.PodcastsContent
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 /**
  * The Library tab: your subscribed podcasts and your playlists, switched with a click-based
@@ -23,12 +24,13 @@ fun LibraryTab(
     onOpenPodcast: (String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     var subTab by rememberSaveable { mutableIntStateOf(0) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = subTab) {
-            Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("Podcasts") })
-            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("Playlists") })
+            Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text(strings.podcastsTab) })
+            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text(strings.playlistsTab) })
         }
         when (subTab) {
             0 -> PodcastsContent(onOpenPodcast = onOpenPodcast)

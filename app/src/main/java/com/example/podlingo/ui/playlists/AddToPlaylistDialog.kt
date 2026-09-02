@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun AddToPlaylistDialog(
@@ -40,6 +41,7 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit,
     viewModel: AddToPlaylistViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val membershipFlow = remember(episodeId) { viewModel.membershipFlow(episodeId) }
     val membership by membershipFlow.collectAsStateWithLifecycle(initialValue = emptySet())
@@ -47,12 +49,12 @@ fun AddToPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to playlist") },
+        title = { Text(strings.addToPlaylistTitle) },
         text = {
             Column {
                 if (playlists.isEmpty()) {
                     Text(
-                        text = "No playlists yet - create one below.",
+                        text = strings.noPlaylistsYetCreateBelow,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
@@ -83,7 +85,7 @@ fun AddToPlaylistDialog(
                     OutlinedTextField(
                         value = newPlaylistName,
                         onValueChange = { newPlaylistName = it },
-                        label = { Text("New playlist") },
+                        label = { Text(strings.newPlaylistFieldLabel) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -94,13 +96,13 @@ fun AddToPlaylistDialog(
                         },
                         enabled = newPlaylistName.isNotBlank(),
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Create and add")
+                        Icon(Icons.Filled.Add, contentDescription = strings.createAndAddContentDescription)
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(strings.done) }
         },
     )
 }

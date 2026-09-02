@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun PodcastSearchResultCard(
@@ -26,6 +27,7 @@ fun PodcastSearchResultCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalAppStrings.current
     val result = item.result
     Row(
         modifier = modifier
@@ -52,7 +54,7 @@ fun PodcastSearchResultCard(
             }
             val subtitle = buildList {
                 result.genre?.takeIf { it.isNotBlank() }?.let { add(it) }
-                result.episodeCount?.let { add("$it episodes") }
+                result.episodeCount?.let { add(strings.episodesCountSubtitle(it)) }
             }.joinToString(" · ")
             if (subtitle.isNotEmpty()) {
                 Text(
@@ -67,7 +69,7 @@ fun PodcastSearchResultCard(
         if (item.alreadyAdded) {
             Icon(
                 imageVector = Icons.Filled.CheckCircle,
-                contentDescription = "Already added",
+                contentDescription = strings.alreadyAdded,
                 tint = MaterialTheme.colorScheme.primary,
             )
         }

@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 /** The Search tab - the sole way to add a podcast, replacing the old "+" flow. */
 @Composable
@@ -36,6 +37,7 @@ fun SearchContent(
     onAdded: (String) -> Unit,
     viewModel: AddPodcastViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val query by viewModel.query.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
     val addState by viewModel.addState.collectAsStateWithLifecycle()
@@ -58,7 +60,7 @@ fun SearchContent(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChanged,
-                label = { Text("Search podcasts") },
+                label = { Text(strings.searchPodcastsLabel) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -76,7 +78,7 @@ fun SearchContent(
                         }
                     }
                     is PodcastSearchUiState.NoResults -> Text(
-                        text = "No podcasts found for \"$query\"",
+                        text = strings.noPodcastsFoundFor(query),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center).padding(16.dp),
                     )
@@ -90,14 +92,14 @@ fun SearchContent(
 
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 TextButton(onClick = { showManualEntry = !showManualEntry }) {
-                    Text(if (showManualEntry) "Hide RSS URL entry" else "Add by RSS URL instead")
+                    Text(if (showManualEntry) strings.hideRssUrlEntry else strings.addByRssUrlInstead)
                 }
                 if (showManualEntry) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = manualUrl,
                         onValueChange = { manualUrl = it },
-                        label = { Text("RSS feed URL") },
+                        label = { Text(strings.rssFeedUrlLabel) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -106,7 +108,7 @@ fun SearchContent(
                         onClick = { viewModel.addPodcast(manualUrl) },
                         enabled = addState !is AddPodcastUiState.Loading,
                     ) {
-                        Text("Add")
+                        Text(strings.add)
                     }
                 }
                 val error = (addState as? AddPodcastUiState.Error)?.message

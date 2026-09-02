@@ -25,21 +25,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun UnknownWordsScreen(
     onBack: () -> Unit,
     viewModel: UnknownWordsViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val words by viewModel.unknownWords.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Words you don't know") },
+                title = { Text(strings.wordsYouDontKnowTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -51,7 +53,7 @@ fun UnknownWordsScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No unknown words yet. Mark words in the player's \"Auto translate\" panel and they'll show up here.",
+                    text = strings.noUnknownWordsYet,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),
                 )
@@ -67,14 +69,14 @@ fun UnknownWordsScreen(
                                 Text(translation)
                             } else {
                                 Text(
-                                    "Translating…",
+                                    strings.translatingEllipsis,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         },
                         trailingContent = {
                             IconButton(onClick = { viewModel.markKnown(entry.word) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "I know this word now")
+                                Icon(Icons.Filled.Close, contentDescription = strings.iKnowThisWordNowContentDescription)
                             }
                         },
                     )

@@ -27,17 +27,23 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.config.AppDefaults
+import com.example.podlingo.data.repository.AppLanguage
 import com.example.podlingo.data.repository.ThemeMode
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun SettingsScreen(
@@ -45,20 +51,22 @@ fun SettingsScreen(
     onOpenUnknownWords: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
     val autoFullSentenceEnabled by viewModel.autoFullSentenceEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
     val autoTranslateReadAloudEnabled by viewModel.autoTranslateReadAloudEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val unknownWordCount by viewModel.unknownWordCount.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(strings.settingsTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -67,49 +75,61 @@ fun SettingsScreen(
         Column(modifier = Modifier.fillMaxWidth().padding(padding).verticalScroll(rememberScrollState())) {
             ListItem(
                 modifier = Modifier.fillMaxWidth(),
-                headlineContent = { Text("Theme") },
+                headlineContent = { Text(strings.languageLabel) },
+                supportingContent = {
+                    LanguageSelector(
+                        selected = appLanguage,
+                        onSelected = viewModel::setAppLanguage,
+                        strings = strings,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text(strings.themeLabel) },
                 supportingContent = {
                     ThemeModeSelector(
                         selected = themeMode,
                         onSelected = viewModel::setThemeMode,
+                        strings = strings,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 },
             )
             SettingsToggleItem(
-                title = "Translate hardest word only",
-                description = "On trigger, translate just the hardest word in the sentence " +
-                    "(by Oxford CEFR level). Trigger again right away on the same " +
-                    "sentence to reveal the next-hardest word.",
+                title = strings.hardWordModeTitle,
+                description = strings.hardWordModeDescription,
                 checked = hardWordModeEnabled,
                 onCheckedChange = viewModel::setHardWordModeEnabled,
+                strings = strings,
             )
             SettingsToggleItem(
-                title = "Auto full-sentence for hard sentences",
-                description = "Within hard-word mode: if a sentence has ${AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT} " +
-                    "or more hard words, translate the whole sentence instead of one word at a time.",
+                title = strings.autoFullSentenceTitle,
+                description = strings.autoFullSentenceDescription(AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT),
                 checked = autoFullSentenceEnabled,
                 onCheckedChange = viewModel::setAutoFullSentenceEnabled,
                 switchEnabled = hardWordModeEnabled,
+                strings = strings,
             )
             SettingsToggleItem(
-                title = "Auto-play next episode",
-                description = "When an episode finishes, automatically start the next one in the podcast.",
+                title = strings.autoPlayNextTitle,
+                description = strings.autoPlayNextDescription,
                 checked = autoPlayNextEnabled,
                 onCheckedChange = viewModel::setAutoPlayNextEnabled,
+                strings = strings,
             )
             SettingsToggleItem(
-                title = "Read auto-translated words aloud",
-                description = "When Auto translate finds a word you don't know, pause and read it aloud " +
-                    "like the manual trigger does - just the word if hard-word mode is on, " +
-                    "or the whole sentence otherwise.",
+                title = strings.autoTranslateReadAloudTitle,
+                description = strings.autoTranslateReadAloudDescription,
                 checked = autoTranslateReadAloudEnabled,
                 onCheckedChange = viewModel::setAutoTranslateReadAloudEnabled,
+                strings = strings,
             )
             ListItem(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUnknownWords),
-                headlineContent = { Text("Words you don't know") },
-                supportingContent = { Text("View and edit the words flagged for auto-translation.") },
+                headlineContent = { Text(strings.unknownWordsTitle) },
+                supportingContent = { Text(strings.unknownWordsDescription) },
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(unknownWordCount.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -131,6 +151,7 @@ private fun SettingsToggleItem(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    strings: AppStrings,
     switchEnabled: Boolean = true,
 ) {
     var infoExpanded by remember { mutableStateOf(false) }
@@ -141,7 +162,7 @@ private fun SettingsToggleItem(
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { infoExpanded = !infoExpanded }) {
-                        Icon(Icons.Outlined.Info, contentDescription = "About $title")
+                        Icon(Icons.Outlined.Info, contentDescription = strings.aboutContentDescription(title))
                     }
                     Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = switchEnabled)
                 }
@@ -162,17 +183,54 @@ private fun SettingsToggleItem(
 private fun ThemeModeSelector(
     selected: ThemeMode,
     onSelected: (ThemeMode) -> Unit,
+    strings: AppStrings,
     modifier: Modifier = Modifier,
 ) {
-    val options = listOf(ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.SYSTEM to "System")
-    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (mode, label) ->
-            SegmentedButton(
-                selected = selected == mode,
-                onClick = { onSelected(mode) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                label = { Text(label) },
-            )
+    val options = listOf(
+        ThemeMode.LIGHT to strings.themeLight,
+        ThemeMode.DARK to strings.themeDark,
+        ThemeMode.SYSTEM to strings.themeSystem,
+    )
+    // Kept Ltr regardless of app language - mirroring this row to RTL just swapped which end each
+    // segment's rounded corner sat on without changing anything meaningful, reading as broken.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, (mode, label) ->
+                SegmentedButton(
+                    selected = selected == mode,
+                    onClick = { onSelected(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    label = { Text(label) },
+                    icon = {},
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelector(
+    selected: AppLanguage,
+    onSelected: (AppLanguage) -> Unit,
+    strings: AppStrings,
+    modifier: Modifier = Modifier,
+) {
+    val options = listOf(
+        AppLanguage.ENGLISH to strings.languageEnglish,
+        AppLanguage.HEBREW to strings.languageHebrew,
+    )
+    // Kept Ltr regardless of app language, same reasoning as ThemeModeSelector above.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, (language, label) ->
+                SegmentedButton(
+                    selected = selected == language,
+                    onClick = { onSelected(language) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    label = { Text(label) },
+                    icon = {},
+                )
+            }
         }
     }
 }

@@ -19,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.podlingo.ui.addpodcast.SearchContent
 import com.example.podlingo.ui.history.HomeContent
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun MainScreen(
@@ -29,13 +31,14 @@ fun MainScreen(
     onOpenPodcast: (String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(tabTitle(pagerState.currentPage)) },
+                title = { Text(tabTitle(pagerState.currentPage, strings)) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        Icon(Icons.Filled.Settings, contentDescription = strings.settingsContentDescription)
                     }
                 },
                 // Matches MainTabBar's NavigationBar container color, so the Home/Search/Library
@@ -60,8 +63,8 @@ fun MainScreen(
     }
 }
 
-private fun tabTitle(page: Int): String = when (page) {
-    0 -> "Home"
-    1 -> "Search"
-    else -> "Library"
+private fun tabTitle(page: Int, strings: AppStrings): String = when (page) {
+    0 -> strings.tabHome
+    1 -> strings.tabSearch
+    else -> strings.tabLibrary
 }

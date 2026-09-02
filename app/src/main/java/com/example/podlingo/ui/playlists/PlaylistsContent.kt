@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.local.dao.PlaylistWithCount
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 /** The "Playlists" section within the Library tab. */
 @Composable
@@ -41,6 +43,7 @@ fun PlaylistsContent(
     onOpenPlaylist: (String) -> Unit,
     viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
     var renamingPlaylist by remember { mutableStateOf<PlaylistWithCount?>(null) }
@@ -48,32 +51,34 @@ fun PlaylistsContent(
 
     if (showCreateDialog) {
         NamePlaylistDialog(
-            title = "New playlist",
+            title = strings.newPlaylistTitle,
             initialName = "",
             onConfirm = { name -> viewModel.createPlaylist(name) },
             onDismiss = { showCreateDialog = false },
+            strings = strings,
         )
     }
     renamingPlaylist?.let { playlist ->
         NamePlaylistDialog(
-            title = "Rename playlist",
+            title = strings.renamePlaylistTitle,
             initialName = playlist.name,
             onConfirm = { name -> viewModel.renamePlaylist(playlist.id, name) },
             onDismiss = { renamingPlaylist = null },
+            strings = strings,
         )
     }
     deletingPlaylist?.let { playlist ->
         AlertDialog(
             onDismissRequest = { deletingPlaylist = null },
-            title = { Text("Delete \"${playlist.name}\"?") },
-            text = { Text("This removes the playlist. The episodes in it aren't affected.") },
+            title = { Text(strings.deletePlaylistConfirmTitle(playlist.name)) },
+            text = { Text(strings.deletePlaylistConfirmText) },
             confirmButton = {
                 TextButton(onClick = { viewModel.deletePlaylist(playlist.id); deletingPlaylist = null }) {
-                    Text("Delete")
+                    Text(strings.delete)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deletingPlaylist = null }) { Text("Cancel") }
+                TextButton(onClick = { deletingPlaylist = null }) { Text(strings.cancel) }
             },
         )
     }
@@ -82,7 +87,7 @@ fun PlaylistsContent(
         if (playlists.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "No playlists yet. Tap + to create one.",
+                    text = strings.noPlaylistsYet,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -92,19 +97,19 @@ fun PlaylistsContent(
                     var showMenu by remember { mutableStateOf(false) }
                     ListItem(
                         headlineContent = { Text(playlist.name) },
-                        supportingContent = { Text(episodeCountLabel(playlist.episodeCount)) },
+                        supportingContent = { Text(strings.episodeCountLabel(playlist.episodeCount)) },
                         trailingContent = {
                             Box {
                                 IconButton(onClick = { showMenu = true }) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                                    Icon(Icons.Default.MoreVert, contentDescription = strings.moreOptionsContentDescription)
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                     DropdownMenuItem(
-                                        text = { Text("Rename") },
+                                        text = { Text(strings.rename) },
                                         onClick = { showMenu = false; renamingPlaylist = playlist },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("Delete") },
+                                        text = { Text(strings.delete) },
                                         onClick = { showMenu = false; deletingPlaylist = playlist },
                                     )
                                 }
@@ -120,7 +125,7 @@ fun PlaylistsContent(
             onClick = { showCreateDialog = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         ) {
-            Icon(Icons.Default.Add, contentDescription = "New playlist")
+            Icon(Icons.Default.Add, contentDescription = strings.newPlaylistContentDescription)
         }
     }
 }
@@ -131,6 +136,7 @@ private fun NamePlaylistDialog(
     initialName: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    strings: AppStrings,
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     AlertDialog(
@@ -140,20 +146,18 @@ private fun NamePlaylistDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(strings.nameLabel) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(name); onDismiss() }, enabled = name.isNotBlank()) {
-                Text("Save")
+                Text(strings.save)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(strings.cancel) }
         },
     )
 }
-
-private fun episodeCountLabel(count: Int): String = if (count == 1) "1 episode" else "$count episodes"

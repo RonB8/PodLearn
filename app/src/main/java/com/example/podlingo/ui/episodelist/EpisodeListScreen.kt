@@ -29,6 +29,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.local.entity.TranscriptStatus
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 @Composable
 fun EpisodeListScreen(
@@ -36,6 +38,7 @@ fun EpisodeListScreen(
     onBack: () -> Unit,
     viewModel: EpisodeListViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     var addToPlaylistEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -46,10 +49,10 @@ fun EpisodeListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Episodes") },
+                title = { Text(strings.episodesTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -57,17 +60,17 @@ fun EpisodeListScreen(
     ) { padding ->
         if (episodes.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("No episodes found in this feed.")
+                Text(strings.noEpisodesFound)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(episodes, key = { it.id }) { episode ->
                     ListItem(
                         headlineContent = { Text(episode.title) },
-                        supportingContent = { Text(transcriptStatusLabel(episode.transcriptStatus)) },
+                        supportingContent = { Text(transcriptStatusLabel(episode.transcriptStatus, strings)) },
                         trailingContent = {
                             IconButton(onClick = { addToPlaylistEpisodeId = episode.id }) {
-                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
+                                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = strings.addToPlaylist)
                             }
                         },
                         modifier = Modifier.clickable { onOpenEpisode(episode.id) },
@@ -79,11 +82,11 @@ fun EpisodeListScreen(
     }
 }
 
-private fun transcriptStatusLabel(status: TranscriptStatus): String = when (status) {
-    TranscriptStatus.NONE -> "Not yet processed"
-    TranscriptStatus.DOWNLOADING -> "Downloading..."
-    TranscriptStatus.TRANSCRIBING -> "Transcribing..."
-    TranscriptStatus.PROCESSING -> "Processing..."
-    TranscriptStatus.READY -> "Ready"
-    TranscriptStatus.FAILED -> "Failed - tap to retry"
+private fun transcriptStatusLabel(status: TranscriptStatus, strings: AppStrings): String = when (status) {
+    TranscriptStatus.NONE -> strings.transcriptNotYetProcessed
+    TranscriptStatus.DOWNLOADING -> strings.transcriptDownloading
+    TranscriptStatus.TRANSCRIBING -> strings.transcriptTranscribing
+    TranscriptStatus.PROCESSING -> strings.transcriptProcessing
+    TranscriptStatus.READY -> strings.ready
+    TranscriptStatus.FAILED -> strings.transcriptFailedTapToRetry
 }

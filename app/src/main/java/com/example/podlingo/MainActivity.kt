@@ -9,14 +9,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.podlingo.data.repository.AppLanguage
 import com.example.podlingo.data.repository.SettingsRepository
 import com.example.podlingo.data.repository.ThemeMode
 import com.example.podlingo.ui.navigation.PodLingoNavHost
+import com.example.podlingo.ui.strings.EnglishStrings
+import com.example.podlingo.ui.strings.HebrewStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 import com.example.podlingo.ui.theme.PodLingoTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -50,8 +57,18 @@ class MainActivity : ComponentActivity() {
                 insetsController.isAppearanceLightStatusBars = !darkTheme
                 insetsController.isAppearanceLightNavigationBars = !darkTheme
             }
+            val appLanguage by settingsRepository.appLanguage.collectAsStateWithLifecycle()
+            val strings = if (appLanguage == AppLanguage.HEBREW) HebrewStrings else EnglishStrings
+            // The whole app mirrors to RTL for Hebrew except the player's timeline/controls and the
+            // mini-player, which pin themselves back to Ltr locally (see PlaybackControls, MiniPlayerBar).
+            val layoutDirection = if (appLanguage == AppLanguage.HEBREW) LayoutDirection.Rtl else LayoutDirection.Ltr
             PodLingoTheme(darkTheme = darkTheme) {
-                PodLingoNavHost()
+                CompositionLocalProvider(
+                    LocalAppStrings provides strings,
+                    LocalLayoutDirection provides layoutDirection,
+                ) {
+                    PodLingoNavHost()
+                }
             }
         }
     }

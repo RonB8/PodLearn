@@ -25,6 +25,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.ui.common.ArtworkThumbnail
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 import java.util.concurrent.TimeUnit
 
 /** The Home tab: "continue listening" - your most recently played episodes. */
@@ -33,6 +35,7 @@ fun HomeContent(
     onOpenEpisode: (String) -> Unit,
     viewModel: HistoryViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsStateWithLifecycle()
     var addToPlaylistEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -43,7 +46,7 @@ fun HomeContent(
     if (recentlyPlayed.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = "No episodes played yet. Find something in Search.",
+                text = strings.noEpisodesPlayedYet,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -57,7 +60,7 @@ fun HomeContent(
                         Column {
                             Text(item.podcastTitle)
                             Text(
-                                text = relativeTime(item.lastPlayedEpochMs),
+                                text = relativeTime(item.lastPlayedEpochMs, strings),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -65,7 +68,7 @@ fun HomeContent(
                     },
                     trailingContent = {
                         IconButton(onClick = { addToPlaylistEpisodeId = item.id }) {
-                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to playlist")
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = strings.addToPlaylist)
                         }
                     },
                     modifier = Modifier.clickable { onOpenEpisode(item.id) },
@@ -76,16 +79,16 @@ fun HomeContent(
     }
 }
 
-private fun relativeTime(epochMs: Long): String {
+private fun relativeTime(epochMs: Long, strings: AppStrings): String {
     val elapsedMs = (System.currentTimeMillis() - epochMs).coerceAtLeast(0)
     val minutes = TimeUnit.MILLISECONDS.toMinutes(elapsedMs)
     val hours = TimeUnit.MILLISECONDS.toHours(elapsedMs)
     val days = TimeUnit.MILLISECONDS.toDays(elapsedMs)
     return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}m ago"
-        hours < 24 -> "${hours}h ago"
-        days < 7 -> "${days}d ago"
-        else -> "${days / 7}w ago"
+        minutes < 1 -> strings.justNow
+        minutes < 60 -> strings.minutesAgo(minutes)
+        hours < 24 -> strings.hoursAgo(hours)
+        days < 7 -> strings.daysAgo(days)
+        else -> strings.weeksAgo(days / 7)
     }
 }

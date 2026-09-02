@@ -2,6 +2,7 @@ package com.example.podlingo.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.podlingo.data.repository.AppLanguage
 import com.example.podlingo.data.repository.SettingsRepository
 import com.example.podlingo.data.repository.ThemeMode
 import com.example.podlingo.data.repository.WordKnowledgeRepository
@@ -50,5 +51,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) {
         settingsRepository.setThemeMode(mode)
+    }
+
+    val appLanguage: StateFlow<AppLanguage> = settingsRepository.appLanguage
+
+    fun setAppLanguage(language: AppLanguage) {
+        settingsRepository.setAppLanguage(language)
     }
 }

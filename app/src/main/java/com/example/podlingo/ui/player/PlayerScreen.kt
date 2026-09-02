@@ -68,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -83,12 +84,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -100,6 +103,8 @@ import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
+import com.example.podlingo.ui.strings.AppStrings
+import com.example.podlingo.ui.strings.LocalAppStrings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -109,6 +114,7 @@ fun PlayerScreen(
     onNavigateToEpisode: (String) -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddToPlaylist by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -155,10 +161,10 @@ fun PlayerScreen(
             .graphicsLayer { translationY = dragOffsetY },
         topBar = {
             TopAppBar(
-                title = { Text(screenTitle(uiState)) },
+                title = { Text(screenTitle(uiState, strings)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -210,11 +216,11 @@ fun PlayerScreen(
     }
 }
 
-private fun screenTitle(state: PlayerScreenState): String = when (state) {
+private fun screenTitle(state: PlayerScreenState, strings: AppStrings): String = when (state) {
     is PlayerScreenState.Preprocessing -> state.episodeTitle
     is PlayerScreenState.Ready -> state.episodeTitle
-    is PlayerScreenState.Failed -> state.episodeTitle ?: "Episode"
-    PlayerScreenState.Loading -> "Episode"
+    is PlayerScreenState.Failed -> state.episodeTitle ?: strings.episodeFallbackTitle
+    PlayerScreenState.Loading -> strings.episodeFallbackTitle
 }
 
 @Composable
@@ -226,12 +232,13 @@ private fun LoadingView() {
 
 @Composable
 private fun PreprocessingView(state: PlayerScreenState.Preprocessing) {
+    val strings = LocalAppStrings.current
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = preprocessingLabel(state.progress), style = MaterialTheme.typography.titleMedium)
+        Text(text = preprocessingLabel(state.progress, strings), style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
         val fraction = (state.progress as? PreprocessingProgress.Downloading)?.fraction
         if (fraction != null && fraction >= 0f) {
@@ -242,15 +249,15 @@ private fun PreprocessingView(state: PlayerScreenState.Preprocessing) {
     }
 }
 
-private fun preprocessingLabel(progress: PreprocessingProgress): String = when (progress) {
-    is PreprocessingProgress.Downloading -> "Downloading episode..."
+private fun preprocessingLabel(progress: PreprocessingProgress, strings: AppStrings): String = when (progress) {
+    is PreprocessingProgress.Downloading -> strings.downloadingEpisode
     is PreprocessingProgress.Transcribing -> if (progress.chunkCount > 1) {
-        "Transcribing speech (part ${progress.chunkIndex}/${progress.chunkCount})..."
+        strings.transcribingSpeechPart(progress.chunkIndex, progress.chunkCount)
     } else {
-        "Transcribing speech (this can take a while)..."
+        strings.transcribingSpeech
     }
-    PreprocessingProgress.Processing -> "Building transcript..."
-    PreprocessingProgress.Ready -> "Ready"
+    PreprocessingProgress.Processing -> strings.buildingTranscript
+    PreprocessingProgress.Ready -> strings.ready
     is PreprocessingProgress.Failed -> progress.message
 }
 
@@ -332,16 +339,20 @@ private fun ReadyPlayerView(
             onToggleAutoTranslate = onToggleAutoTranslate,
         )
         Spacer(modifier = Modifier.height(20.dp))
-        PlaybackControls(
-            player = state.player,
-            hasNextEpisode = state.hasNextEpisode,
-            onTogglePlayPause = onTogglePlayPause,
-            onSkipBackward = onSkipBackward,
-            onSkipForward = onSkipForward,
-            onSkipToNextEpisode = onSkipToNextEpisode,
-            onSpeedSelected = onSpeedSelected,
-            onSeek = onSeek,
-        )
+        // Pinned to Ltr regardless of app language - per product decision, the seek bar and
+        // transport controls never mirror, so they read the same for English and Hebrew users.
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            PlaybackControls(
+                player = state.player,
+                hasNextEpisode = state.hasNextEpisode,
+                onTogglePlayPause = onTogglePlayPause,
+                onSkipBackward = onSkipBackward,
+                onSkipForward = onSkipForward,
+                onSkipToNextEpisode = onSkipToNextEpisode,
+                onSpeedSelected = onSpeedSelected,
+                onSeek = onSeek,
+            )
+        }
 
         // The translation itself now lives inside the transcript overlay (see TranslationPanel) -
         // this banner only covers the edge case where no sentence lines up with the pause at all,
@@ -439,6 +450,7 @@ private fun PlayerActionRow(
     autoTranslateEnabled: Boolean,
     onToggleAutoTranslate: () -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -447,7 +459,7 @@ private fun PlayerActionRow(
             FilterChip(
                 selected = transcriptVisible,
                 onClick = onToggleTranscript,
-                label = { Text("Transcript") },
+                label = { Text(strings.transcriptChip) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.List,
@@ -460,7 +472,7 @@ private fun PlayerActionRow(
         item {
             AssistChip(
                 onClick = onAddToPlaylist,
-                label = { Text("Add to playlist") },
+                label = { Text(strings.addToPlaylist) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
@@ -474,7 +486,7 @@ private fun PlayerActionRow(
             FilterChip(
                 selected = hardWordModeEnabled,
                 onClick = onToggleHardWordMode,
-                label = { Text("Hard word") },
+                label = { Text(strings.hardWordChip) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.Translate,
@@ -488,7 +500,7 @@ private fun PlayerActionRow(
             FilterChip(
                 selected = autoTranslateEnabled,
                 onClick = onToggleAutoTranslate,
-                label = { Text("Auto translate") },
+                label = { Text(strings.autoTranslateChip) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.School,
@@ -625,6 +637,7 @@ private fun buildSentenceAnnotatedString(
  */
 @Composable
 private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, onDismiss: () -> Unit) {
+    val strings = LocalAppStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -635,7 +648,7 @@ private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, on
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = Color.White)
+                Icon(Icons.Filled.Close, contentDescription = strings.dismiss, tint = Color.White)
             }
         }
         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -649,7 +662,7 @@ private fun TranslationPanel(isTranslating: Boolean, translatedText: String?, on
                 )
             } else {
                 Text(
-                    text = "Translating…",
+                    text = strings.translatingEllipsis,
                     color = Color.White.copy(alpha = 0.7f),
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
@@ -670,6 +683,7 @@ private fun PlaybackControls(
     onSpeedSelected: (Float) -> Unit,
     onSeek: (Long) -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     var isDragging by remember { mutableStateOf(false) }
     var dragPositionMs by remember { mutableStateOf(0f) }
     val durationMs = player.durationMs.coerceAtLeast(1L)
@@ -725,7 +739,7 @@ private fun PlaybackControls(
                 ) {
                     Icon(
                         imageVector = if (player.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (player.isPlaying) "Pause" else "Play",
+                        contentDescription = if (player.isPlaying) strings.pause else strings.play,
                         modifier = Modifier.size(36.dp),
                     )
                 }
@@ -747,7 +761,7 @@ private fun PlaybackControls(
             ) {
                 Icon(
                     imageVector = Icons.Filled.SkipNext,
-                    contentDescription = "Next episode",
+                    contentDescription = strings.nextEpisodeContentDescription,
                     modifier = Modifier.size(32.dp),
                 )
             }
@@ -757,11 +771,16 @@ private fun PlaybackControls(
 
 @Composable
 private fun SkipButton(seconds: Long, isForward: Boolean, onClick: () -> Unit) {
+    val strings = LocalAppStrings.current
     IconButton(onClick = onClick, modifier = Modifier.size(52.dp)) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = Icons.Filled.Replay,
-                contentDescription = if (isForward) "Skip forward $seconds seconds" else "Skip back $seconds seconds",
+                contentDescription = if (isForward) {
+                    strings.skipForwardSecondsContentDescription(seconds)
+                } else {
+                    strings.skipBackSecondsContentDescription(seconds)
+                },
                 modifier = Modifier
                     .size(40.dp)
                     .graphicsLayer { if (isForward) scaleX = -1f },
@@ -777,6 +796,7 @@ private fun SkipButton(seconds: Long, isForward: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
+    val strings = LocalAppStrings.current
     Card(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -787,12 +807,12 @@ private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "No relevant sentence found (that pause looks like it fell in a quiet stretch).",
+                text = strings.noRelevantSentenceMessage,
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss")
+                Icon(Icons.Filled.Close, contentDescription = strings.dismiss)
             }
         }
     }
@@ -801,6 +821,7 @@ private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
 /** Auto-dismisses on its own after [TRANSLATION_POPUP_DURATION_MS] - the user never has to interact with it, playback never pauses for it. */
 @Composable
 private fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () -> Unit) {
+    val strings = LocalAppStrings.current
     LaunchedEffect(popup) {
         delay(TRANSLATION_POPUP_DURATION_MS)
         onDismiss()
@@ -828,7 +849,7 @@ private fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () ->
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Dismiss",
+                    contentDescription = strings.dismiss,
                     tint = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
             }
@@ -849,6 +870,7 @@ private fun VocabCalibrationDialog(
     onSelectAllToggled: () -> Unit,
     onContinue: () -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     Dialog(onDismissRequest = onContinue) {
         var visible by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { visible = true }
@@ -868,12 +890,12 @@ private fun VocabCalibrationDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Do you know these words?",
+                        text = strings.doYouKnowTheseWordsTitle,
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
                     )
                     Text(
-                        text = "Tap any word you don't know - it'll translate automatically when it comes up.",
+                        text = strings.tapWordsExplanation,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -882,7 +904,7 @@ private fun VocabCalibrationDialog(
                     // Handy when most of the tier is unfamiliar - select everything, then tap off
                     // the few words already known, instead of tapping every unfamiliar one.
                     TextButton(onClick = onSelectAllToggled, modifier = Modifier.align(Alignment.End)) {
-                        Text(if (calibration.selected.size == calibration.words.size) "Deselect all" else "Select all")
+                        Text(if (calibration.selected.size == calibration.words.size) strings.deselectAll else strings.selectAll)
                     }
                     // Capped and independently scrollable so a long word list can never push the
                     // Continue button itself off-screen - the header and button always stay put.
@@ -903,7 +925,7 @@ private fun VocabCalibrationDialog(
                     }
                     Spacer(modifier = Modifier.height(20.dp))
                     Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
-                        Text("Continue")
+                        Text(strings.continueLabel)
                     }
                 }
             }
@@ -913,12 +935,13 @@ private fun VocabCalibrationDialog(
 
 @Composable
 private fun QuizPromptDialog(onAnswer: (startQuiz: Boolean) -> Unit) {
+    val strings = LocalAppStrings.current
     AlertDialog(
         onDismissRequest = { onAnswer(false) },
-        title = { Text("Review what you learned?") },
-        text = { Text("Want to try a quick quiz on the words you didn't know in this episode?") },
-        confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text("Yes") } },
-        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text("No") } },
+        title = { Text(strings.reviewWhatYouLearnedTitle) },
+        text = { Text(strings.wantToTryQuizText) },
+        confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text(strings.yes) } },
+        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text(strings.no) } },
     )
 }
 
@@ -930,25 +953,26 @@ private fun VocabQuizDialog(
     onNext: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     Dialog(onDismissRequest = {}) {
         Card(shape = RoundedCornerShape(24.dp)) {
             Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
                 if (quiz.finished) {
-                    Text("Quiz complete!", style = MaterialTheme.typography.titleLarge)
+                    Text(strings.quizCompleteTitle, style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "You got ${quiz.correctCount} out of ${quiz.questions.size} right.",
+                        text = strings.youGotXOutOfYRight(quiz.correctCount, quiz.questions.size),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        Text("Done")
+                        Text(strings.done)
                     }
                 } else {
                     val question = quiz.questions[quiz.currentIndex]
                     val answered = quiz.answeredThisQuestion
                     Text(
-                        text = "Question ${quiz.currentIndex + 1}/${quiz.questions.size}",
+                        text = strings.questionXOfY(quiz.currentIndex + 1, quiz.questions.size),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -980,7 +1004,7 @@ private fun VocabQuizDialog(
                     if (answered != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (quiz.currentIndex + 1 >= quiz.questions.size) "See results" else "Next")
+                            Text(if (quiz.currentIndex + 1 >= quiz.questions.size) strings.seeResults else strings.next)
                         }
                     }
                 }

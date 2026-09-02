@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,9 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.podlingo.ui.common.ArtworkThumbnail
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 private const val SWIPE_UP_THRESHOLD_DP = 24
 
@@ -49,52 +53,57 @@ fun MiniPlayerBar(
     }
     val swipeUpThresholdPx = with(LocalDensity.current) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
     var accumulatedDrag by remember { mutableStateOf(0f) }
+    val strings = LocalAppStrings.current
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        tonalElevation = 3.dp,
-    ) {
-        // Content is padded above the system nav bar/gesture strip so the title and play button
-        // stay tappable; the colored Surface background still extends behind it edge-to-edge.
-        Column(modifier = Modifier.navigationBarsPadding()) {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(2.dp),
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClick)
-                    // A small upward flick also opens the player - the natural "pull this thing
-                    // up" gesture Spotify/YouTube Music users already expect from a mini-player.
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta -> accumulatedDrag += delta },
-                        onDragStopped = {
-                            if (accumulatedDrag < -swipeUpThresholdPx) onClick()
-                            accumulatedDrag = 0f
-                        },
-                    )
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ArtworkThumbnail(artworkUrl = nowPlaying.artworkUrl, size = 40.dp)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = nowPlaying.episodeTitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+    // Pinned to Ltr regardless of app language, same as the player's own timeline/controls - the
+    // mini-player is really an extension of those transport controls.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            tonalElevation = 3.dp,
+        ) {
+            // Content is padded above the system nav bar/gesture strip so the title and play button
+            // stay tappable; the colored Surface background still extends behind it edge-to-edge.
+            Column(modifier = Modifier.navigationBarsPadding()) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
                 )
-                IconButton(onClick = onTogglePlayPause) {
-                    Icon(
-                        imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (nowPlaying.isPlaying) "Pause" else "Play",
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onClick)
+                        // A small upward flick also opens the player - the natural "pull this thing
+                        // up" gesture Spotify/YouTube Music users already expect from a mini-player.
+                        .draggable(
+                            orientation = Orientation.Vertical,
+                            state = rememberDraggableState { delta -> accumulatedDrag += delta },
+                            onDragStopped = {
+                                if (accumulatedDrag < -swipeUpThresholdPx) onClick()
+                                accumulatedDrag = 0f
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ArtworkThumbnail(artworkUrl = nowPlaying.artworkUrl, size = 40.dp)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = nowPlaying.episodeTitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
+                    IconButton(onClick = onTogglePlayPause) {
+                        Icon(
+                            imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (nowPlaying.isPlaying) strings.pause else strings.play,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
                 }
             }
         }

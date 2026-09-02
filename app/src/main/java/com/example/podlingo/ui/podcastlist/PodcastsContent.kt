@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.ui.common.ArtworkThumbnail
+import com.example.podlingo.ui.strings.LocalAppStrings
 
 /** The "Podcasts" section within the Library tab. Adding a podcast now happens via Search. */
 @Composable
@@ -23,12 +24,13 @@ fun PodcastsContent(
     onOpenPodcast: (String) -> Unit,
     viewModel: PodcastListViewModel = hiltViewModel(),
 ) {
+    val strings = LocalAppStrings.current
     val podcasts by viewModel.podcasts.collectAsStateWithLifecycle()
 
     if (podcasts.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = "No podcasts yet. Find one in Search.",
+                text = strings.noPodcastsYet,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

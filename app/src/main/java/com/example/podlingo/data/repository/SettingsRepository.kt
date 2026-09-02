@@ -2,6 +2,7 @@ package com.example.podlingo.data.repository
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,6 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
+
+enum class AppLanguage { ENGLISH, HEBREW }
+
+/** "he" is the modern ISO code for Hebrew; "iw" is the older code some Android versions still report. */
+private fun systemDefaultAppLanguage(): AppLanguage =
+    if (Locale.getDefault().language in setOf("he", "iw")) AppLanguage.HEBREW else AppLanguage.ENGLISH
 
 /**
  * App-wide user preferences. Backed by SharedPreferences rather than DataStore - a couple of
@@ -72,6 +79,18 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         _themeMode.value = mode
     }
 
+    /** Defaults to the device's system locale on first read (Hebrew if the phone is set to Hebrew), then stays put until the user overrides it here. */
+    private val _appLanguage = MutableStateFlow(
+        prefs.getString(KEY_APP_LANGUAGE, null)?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() }
+            ?: systemDefaultAppLanguage(),
+    )
+    val appLanguage: StateFlow<AppLanguage> = _appLanguage.asStateFlow()
+
+    fun setAppLanguage(language: AppLanguage) {
+        prefs.edit().putString(KEY_APP_LANGUAGE, language.name).apply()
+        _appLanguage.value = language
+    }
+
     /**
      * The last argument-free top-level screen the user had open, so a cold start (the process was
      * killed in the background - common on Samsung's aggressive battery management, or the user
@@ -100,6 +119,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         private const val KEY_AUTO_TRANSLATE_READ_ALOUD = "auto_translate_read_aloud_enabled"
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_LAST_ROUTE = "last_route"
         private const val KEY_LAST_TAB_INDEX = "last_tab_index"
     }
