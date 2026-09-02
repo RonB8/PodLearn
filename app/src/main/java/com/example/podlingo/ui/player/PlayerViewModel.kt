@@ -74,6 +74,11 @@ class PlayerViewModel @Inject constructor(
     private var unknownWordOccurrences: List<WordTiming> = emptyList()
     private val firedUnknownWords = mutableSetOf<String>()
 
+    // Read-aloud + hard-word-mode-off reads the whole sentence, not just the triggering word - a
+    // sentence with more than one unknown word would otherwise pass this per-word dedup once per
+    // word it contains, reading the same sentence aloud again for every one of them.
+    private val spokenSentenceIdsForReadAloud = mutableSetOf<String>()
+
     // End-of-episode quiz: the display-form words awaiting quiz-building once the user says yes.
     private var pendingQuizWords: List<String> = emptyList()
 
@@ -646,13 +651,19 @@ class PlayerViewModel @Inject constructor(
         if (current !is PlayerScreenState.Ready || !current.autoTranslateEnabled) return
         val effectiveTimeMs = positionMs - AppDefaults.REACTION_DELAY_MS
         val currentSentenceId = current.sentences.lastOrNull { it.startMs <= effectiveTimeMs }?.id ?: return
+        val readAloud = settingsRepository.autoTranslateReadAloudEnabled.value
+        val sentenceMode = readAloud && !settingsRepository.hardWordModeEnabled.value
+        // Sentence mode reads the whole sentence for whichever unknown word triggers it first - a
+        // second (or third) unknown word later in that same sentence must not re-trigger it.
+        if (sentenceMode && currentSentenceId in spokenSentenceIdsForReadAloud) return
         val next = unknownWordOccurrences.firstOrNull {
             it.sentenceId == currentSentenceId &&
                 it.startMs <= effectiveTimeMs &&
                 WordNormalizer.normalize(it.word) !in firedUnknownWords
         } ?: return
         firedUnknownWords += WordNormalizer.normalize(next.word)
-        if (settingsRepository.autoTranslateReadAloudEnabled.value) {
+        if (readAloud) {
+            if (sentenceMode) spokenSentenceIdsForReadAloud += currentSentenceId
             viewModelScope.launch { speakAutoTranslatedWord(next) }
         } else {
             viewModelScope.launch {
