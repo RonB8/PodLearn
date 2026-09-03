@@ -36,27 +36,49 @@ class TranscriptRepository @Inject constructor(
     private val chunkedTranscriber: WhisperChunkedTranscriber,
     private val episodeDao: EpisodeDao,
     private val transcriptDao: TranscriptDao,
+    private val episodeStorageManager: EpisodeStorageManager,
 ) {
 
     fun preprocess(episode: EpisodeEntity): Flow<PreprocessingProgress> = channelFlow {
-        if (episode.transcriptStatus == TranscriptStatus.READY) {
+        val localFile = resolveLocalFile(episode)
+        val alreadyTranscribed = episode.transcriptStatus == TranscriptStatus.READY
+        // A ready transcript with its audio still on disk needs nothing further - the common case.
+        // If the audio was evicted for storage space (see EpisodeStorageManager) but the transcript
+        // is still cached, only the download below re-runs; transcription is never repeated.
+        if (alreadyTranscribed && localFile.exists()) {
             send(PreprocessingProgress.Ready)
             return@channelFlow
         }
 
-        val localFile = resolveLocalFile(episode)
         if (!localFile.exists()) {
-            episodeDao.updateTranscriptStatus(episode.id, TranscriptStatus.DOWNLOADING)
+            // Only flip the persisted status for a genuinely new episode - re-downloading evicted
+            // audio for an already-READY transcript shouldn't touch that status either way, since
+            // the transcript itself was never affected.
+            if (!alreadyTranscribed) episodeDao.updateTranscriptStatus(episode.id, TranscriptStatus.DOWNLOADING)
             send(PreprocessingProgress.Downloading(0f))
             val downloadResult = fileDownloader.download(episode.audioUrl, localFile) { downloaded, total ->
                 val fraction = if (total > 0) downloaded.toFloat() / total else -1f
                 trySend(PreprocessingProgress.Downloading(fraction))
             }
             if (downloadResult.isFailure) {
-                failEpisode(episode.id, downloadResult.exceptionOrNull()?.message ?: "Download failed")
+                val message = downloadResult.exceptionOrNull()?.message ?: "Download failed"
+                if (alreadyTranscribed) {
+                    // The transcript is still perfectly good - only the re-download failed, so
+                    // don't persist FAILED over a READY transcript (that would force a pointless,
+                    // costly re-transcription on the next retry).
+                    send(PreprocessingProgress.Failed(message))
+                } else {
+                    failEpisode(episode.id, message)
+                }
                 return@channelFlow
             }
             episodeDao.updateLocalFilePath(episode.id, localFile.absolutePath)
+            episodeStorageManager.evictIfOverLimit(protectedEpisodeId = episode.id)
+        }
+
+        if (alreadyTranscribed) {
+            send(PreprocessingProgress.Ready)
+            return@channelFlow
         }
 
         send(PreprocessingProgress.Transcribing())

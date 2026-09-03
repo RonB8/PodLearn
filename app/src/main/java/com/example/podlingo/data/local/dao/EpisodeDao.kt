@@ -17,6 +17,20 @@ data class RecentlyPlayedItem(
     val lastPlayedEpochMs: Long,
 )
 
+/** A downloaded episode's on-disk location, for storage-usage accounting and LRU eviction (see EpisodeStorageManager). */
+data class DownloadedEpisodeRef(
+    val id: String,
+    val localFilePath: String,
+)
+
+/** A podcast with listening history, for the Home tab's "Podcasts" view - grouped from [RecentlyPlayedItem] by podcast. */
+data class RecentlyPlayedPodcast(
+    val id: String,
+    val title: String,
+    val artworkUrl: String?,
+    val lastPlayedEpochMs: Long,
+)
+
 @Dao
 interface EpisodeDao {
 
@@ -38,8 +52,18 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET localFilePath = :path WHERE id = :id")
     suspend fun updateLocalFilePath(id: String, path: String)
 
+    @Query("UPDATE episodes SET localFilePath = NULL WHERE id = :id")
+    suspend fun clearLocalFilePath(id: String)
+
+    /** Downloaded episodes, least-recently-played first (never-played episodes sort first, ahead of anything with a play timestamp) - the eviction order for [com.example.podlingo.data.repository.EpisodeStorageManager]. */
+    @Query("SELECT id, localFilePath FROM episodes WHERE localFilePath IS NOT NULL ORDER BY lastPlayedEpochMs ASC")
+    suspend fun getDownloadedEpisodesByLruOrder(): List<DownloadedEpisodeRef>
+
     @Query("UPDATE episodes SET lastPlayedEpochMs = :epochMs WHERE id = :id")
     suspend fun updateLastPlayed(id: String, epochMs: Long)
+
+    @Query("UPDATE episodes SET lastPlayedEpochMs = NULL WHERE id = :id")
+    suspend fun clearLastPlayed(id: String)
 
     @Query("UPDATE episodes SET vocabCalibrated = 1 WHERE id = :id")
     suspend fun markVocabCalibrated(id: String)
@@ -55,4 +79,18 @@ interface EpisodeDao {
         """,
     )
     fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>>
+
+    /** Distinct podcasts you have listening history with, most-recently-played first. */
+    @Query(
+        """
+        SELECT podcasts.id AS id, podcasts.title AS title, podcasts.imageUrl AS artworkUrl,
+               MAX(episodes.lastPlayedEpochMs) AS lastPlayedEpochMs
+        FROM episodes
+        INNER JOIN podcasts ON podcasts.id = episodes.podcastId
+        WHERE episodes.lastPlayedEpochMs IS NOT NULL
+        GROUP BY episodes.podcastId
+        ORDER BY lastPlayedEpochMs DESC
+        """,
+    )
+    fun getRecentlyPlayedPodcasts(): Flow<List<RecentlyPlayedPodcast>>
 }

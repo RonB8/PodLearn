@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -59,6 +60,8 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val unknownWordCount by viewModel.unknownWordCount.collectAsStateWithLifecycle()
+    val storageLimitBytes by viewModel.storageLimitBytes.collectAsStateWithLifecycle()
+    val storageUsedBytes by viewModel.storageUsedBytes.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -137,8 +140,62 @@ fun SettingsScreen(
                     }
                 },
             )
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                headlineContent = { Text(strings.storageTitle) },
+                supportingContent = {
+                    StorageLimitSection(
+                        usedBytes = storageUsedBytes,
+                        limitBytes = storageLimitBytes,
+                        onLimitChanged = viewModel::setStorageLimitBytes,
+                        strings = strings,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                },
+            )
         }
     }
+}
+
+/** Shows current usage against the configured cap and lets the user drag that cap between [AppDefaults.MIN_STORAGE_LIMIT_BYTES] and [AppDefaults.MAX_STORAGE_LIMIT_BYTES]. */
+@Composable
+private fun StorageLimitSection(
+    usedBytes: Long,
+    limitBytes: Long,
+    onLimitChanged: (Long) -> Unit,
+    strings: AppStrings,
+    modifier: Modifier = Modifier,
+) {
+    // Local drag state so the label tracks the thumb smoothly - only committed to the ViewModel
+    // (and persisted) once the drag ends, not on every intermediate value.
+    var pendingLimitBytes by remember(limitBytes) { mutableStateOf(limitBytes) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = strings.storageUsageLabel(formatBytes(usedBytes), formatBytes(pendingLimitBytes)),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Slider(
+            value = pendingLimitBytes.toFloat(),
+            onValueChange = { pendingLimitBytes = it.toLong() },
+            onValueChangeFinished = { onLimitChanged(pendingLimitBytes) },
+            valueRange = AppDefaults.MIN_STORAGE_LIMIT_BYTES.toFloat()..AppDefaults.MAX_STORAGE_LIMIT_BYTES.toFloat(),
+            steps = STORAGE_LIMIT_SLIDER_STEPS,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            text = strings.storageLimitDescription,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 500 MB increments between the min and max storage limit, excluding both endpoints. */
+private const val STORAGE_LIMIT_SLIDER_STEPS = 18
+
+private fun formatBytes(bytes: Long): String {
+    val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+    return if (gb >= 1) "%.1f GB".format(gb) else "%.0f MB".format(bytes / (1024.0 * 1024.0))
 }
 
 /**

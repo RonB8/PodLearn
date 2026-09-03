@@ -3,6 +3,7 @@ package com.example.podlingo.data.repository
 import com.example.podlingo.data.local.dao.EpisodeDao
 import com.example.podlingo.data.local.dao.PodcastDao
 import com.example.podlingo.data.local.dao.RecentlyPlayedItem
+import com.example.podlingo.data.local.dao.RecentlyPlayedPodcast
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.PodcastEntity
 import com.example.podlingo.data.remote.rss.RssParser
@@ -43,7 +44,7 @@ class PodcastRepository @Inject constructor(
                 imageUrl = feed.imageUrl,
                 description = feed.description,
             )
-            podcastDao.insert(podcast)
+            if (existing != null) podcastDao.update(podcast) else podcastDao.insert(podcast)
 
             val episodes = feed.items.mapNotNull { item ->
                 val audioUrl = item.audioUrl ?: return@mapNotNull null
@@ -84,4 +85,11 @@ class PodcastRepository @Inject constructor(
     }
 
     fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>> = episodeDao.getRecentlyPlayed()
+
+    fun getRecentlyPlayedPodcasts(): Flow<List<RecentlyPlayedPodcast>> = episodeDao.getRecentlyPlayedPodcasts()
+
+    /** Drops [episodeId] off the recently-played list - the episode, its download, and its transcript are untouched. */
+    suspend fun removeFromHistory(episodeId: String) {
+        episodeDao.clearLastPlayed(episodeId)
+    }
 }

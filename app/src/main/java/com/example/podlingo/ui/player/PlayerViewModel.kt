@@ -45,6 +45,7 @@ class PlayerViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val wordDifficultyRepository: WordDifficultyRepository,
     private val wordKnowledgeRepository: WordKnowledgeRepository,
+    private val vocabQuizBuilder: VocabQuizBuilder,
 ) : ViewModel() {
 
     private val episodeId: String = checkNotNull(savedStateHandle["episodeId"])
@@ -142,6 +143,17 @@ class PlayerViewModel @Inject constructor(
         if (state.player.isPlaying) playerController.pause() else playerController.play()
     }
 
+    /**
+     * Resumes playback after a translation trigger's async work (fetch + TTS) finishes - unless
+     * the episode ended in the meantime and the end-of-episode quiz flow (prompt or quiz itself)
+     * has since taken over, in which case resuming here would play audio behind that dialog.
+     */
+    private fun resumeIfNotQuizzing() {
+        val state = _uiState.value
+        if (state is PlayerScreenState.Ready && (state.quizPrompt || state.quiz != null)) return
+        playerController.resume()
+    }
+
     fun skipToNextEpisode() {
         nextEpisodeId?.let { _navigateToEpisode.tryEmit(it) }
     }
@@ -236,7 +248,7 @@ class PlayerViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            val questions = buildQuizQuestions(pendingQuizWords)
+            val questions = vocabQuizBuilder.buildQuizQuestions(pendingQuizWords)
             if (questions.isEmpty()) {
                 advanceToNextEpisodeIfEnabled()
                 return@launch
@@ -290,7 +302,7 @@ class PlayerViewModel @Inject constructor(
 
     fun dismissSentenceOverlay() {
         hebrewSpeaker.stop()
-        playerController.resume()
+        resumeIfNotQuizzing()
         _uiState.update { current ->
             if (current is PlayerScreenState.Ready) {
                 current.copy(
@@ -394,7 +406,7 @@ class PlayerViewModel @Inject constructor(
                                 current
                             }
                         }
-                        playerController.resume()
+                        resumeIfNotQuizzing()
                         return@launch
                     }
                     if (settingsRepository.hardWordModeEnabled.value) {
@@ -432,7 +444,7 @@ class PlayerViewModel @Inject constructor(
                             current
                         }
                     }
-                    playerController.resume()
+                    resumeIfNotQuizzing()
                 }
             }
         }
@@ -475,7 +487,7 @@ class PlayerViewModel @Inject constructor(
             wordDifficultyRepository::isKnownWord,
         )
         if (ranked.isEmpty()) {
-            playerController.resume()
+            resumeIfNotQuizzing()
             return
         }
 
@@ -557,7 +569,7 @@ class PlayerViewModel @Inject constructor(
             // timeout a dropped callback would leave the episode paused forever.
             withTimeoutOrNull(AppDefaults.TTS_WAIT_TIMEOUT_MS) { hebrewSpeaker.speak(translated) }
         }
-        playerController.resume()
+        resumeIfNotQuizzing()
         // Auto-close the translation panel once its narration has actually finished, so it
         // doesn't linger over the transcript after there's nothing left to read - unless a
         // newer trigger (or a manual dismiss) already took over while this one was speaking.
@@ -717,7 +729,7 @@ class PlayerViewModel @Inject constructor(
         } else {
             val sentence = transcriptRepository.getSentence(occurrence.sentenceId)
             if (sentence == null) {
-                playerController.resume()
+                resumeIfNotQuizzing()
                 return
             }
             _uiState.update { current ->
@@ -737,37 +749,11 @@ class PlayerViewModel @Inject constructor(
 
     // --- Vocabulary trainer: end-of-episode quiz ---------------------------------------------
 
-    private suspend fun unknownWordsInEpisode(): List<String> {
-        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
-        val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
-        val statuses = wordKnowledgeRepository.getStatuses(deduped.map { it.word })
-        return deduped
-            .filter { statuses[WordNormalizer.normalize(it.word)]?.status == WordKnowledgeStatus.UNKNOWN }
-            .map { it.word }
-    }
+    private suspend fun unknownWordsInEpisode(): List<String> = vocabQuizBuilder.unknownWordsInEpisode(episodeId)
 
     private fun advanceToNextEpisodeIfEnabled() {
         val next = nextEpisodeId ?: return
         if (settingsRepository.autoPlayNextEnabled.value) _navigateToEpisode.tryEmit(next)
-    }
-
-    /** One question per word: the real cached/fetched translation plus 3 distractors sampled from other real translations - never an LLM call. */
-    private suspend fun buildQuizQuestions(words: List<String>): List<VocabQuizQuestion> {
-        val questions = mutableListOf<VocabQuizQuestion>()
-        for (word in words) {
-            val correct = wordKnowledgeRepository.getOrFetchTranslation(word) ?: continue
-            val distractorCount = AppDefaults.QUIZ_OPTION_COUNT - 1
-            val distractors = wordKnowledgeRepository.sampleDistractors(word, distractorCount).toMutableSet()
-            if (distractors.size < distractorCount) {
-                val fallback = questions.map { it.correctAnswer }.filter { it != correct && it !in distractors }
-                distractors += fallback.shuffled().take(distractorCount - distractors.size)
-            }
-            // Not enough real wrong answers exist anywhere yet (e.g. this is the very first
-            // quiz ever) - skip rather than show a question with fewer than 4 options.
-            if (distractors.size < distractorCount) continue
-            questions += VocabQuizQuestion(word = word, correctAnswer = correct, options = (distractors + correct).shuffled())
-        }
-        return questions
     }
 
     override fun onCleared() {

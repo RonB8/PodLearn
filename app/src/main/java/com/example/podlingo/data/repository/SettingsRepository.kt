@@ -1,6 +1,7 @@
 package com.example.podlingo.data.repository
 
 import android.content.Context
+import com.example.podlingo.config.AppDefaults
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
@@ -91,6 +92,18 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         _appLanguage.value = language
     }
 
+    /** Downloaded-episode storage cap - see [com.example.podlingo.data.repository.EpisodeStorageManager]. */
+    private val _storageLimitBytes = MutableStateFlow(
+        prefs.getLong(KEY_STORAGE_LIMIT_BYTES, AppDefaults.DEFAULT_STORAGE_LIMIT_BYTES),
+    )
+    val storageLimitBytes: StateFlow<Long> = _storageLimitBytes.asStateFlow()
+
+    fun setStorageLimitBytes(bytes: Long) {
+        val clamped = bytes.coerceIn(AppDefaults.MIN_STORAGE_LIMIT_BYTES, AppDefaults.MAX_STORAGE_LIMIT_BYTES)
+        prefs.edit().putLong(KEY_STORAGE_LIMIT_BYTES, clamped).apply()
+        _storageLimitBytes.value = clamped
+    }
+
     /**
      * The last argument-free top-level screen the user had open, so a cold start (the process was
      * killed in the background - common on Samsung's aggressive battery management, or the user
@@ -120,6 +133,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_APP_LANGUAGE = "app_language"
+        private const val KEY_STORAGE_LIMIT_BYTES = "storage_limit_bytes"
         private const val KEY_LAST_ROUTE = "last_route"
         private const val KEY_LAST_TAB_INDEX = "last_tab_index"
     }

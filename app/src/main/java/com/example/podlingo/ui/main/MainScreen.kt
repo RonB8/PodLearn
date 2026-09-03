@@ -52,10 +52,13 @@ fun MainScreen(
     ) { padding ->
         HorizontalPager(
             state = pagerState,
+            // Home/Search/Library is switched by tapping MainTabBar only - swiping here would
+            // fight the swipeable History/Podcasts and Podcasts/Playlists sub-tabs one level down.
+            userScrollEnabled = false,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) { page ->
             when (page) {
-                0 -> HomeContent(onOpenEpisode = onOpenEpisode)
+                0 -> HomeContent(onOpenEpisode = onOpenEpisode, onOpenPodcast = onOpenPodcast)
                 1 -> SearchContent(onAdded = onPodcastAdded)
                 else -> LibraryTab(onOpenPodcast = onOpenPodcast, onOpenPlaylist = onOpenPlaylist)
             }

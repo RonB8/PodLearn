@@ -48,7 +48,6 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -105,6 +104,7 @@ import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 import com.example.podlingo.ui.strings.AppStrings
 import com.example.podlingo.ui.strings.LocalAppStrings
+import com.example.podlingo.ui.vocabulary.VocabQuizDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -968,74 +968,6 @@ private fun QuizPromptDialog(onAnswer: (startQuiz: Boolean) -> Unit) {
         confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text(strings.yes) } },
         dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text(strings.no) } },
     )
-}
-
-/** One question at a time, then a score summary - [quiz]'s current question drives right/wrong reveal via color once [VocabQuizState.answeredThisQuestion] is set. */
-@Composable
-private fun VocabQuizDialog(
-    quiz: VocabQuizState,
-    onAnswerSelected: (String) -> Unit,
-    onNext: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val strings = LocalAppStrings.current
-    Dialog(onDismissRequest = {}) {
-        Card(shape = RoundedCornerShape(24.dp)) {
-            Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
-                if (quiz.finished) {
-                    Text(strings.quizCompleteTitle, style = MaterialTheme.typography.titleLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = strings.youGotXOutOfYRight(quiz.correctCount, quiz.questions.size),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        Text(strings.done)
-                    }
-                } else {
-                    val question = quiz.questions[quiz.currentIndex]
-                    val answered = quiz.answeredThisQuestion
-                    Text(
-                        text = strings.questionXOfY(quiz.currentIndex + 1, quiz.questions.size),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(question.word, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    question.options.forEach { option ->
-                        val isCorrectOption = option == question.correctAnswer
-                        val containerColor = when {
-                            answered == null -> MaterialTheme.colorScheme.surfaceVariant
-                            isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
-                            option == answered -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
-                        val contentColor = when {
-                            answered == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                            isCorrectOption -> MaterialTheme.colorScheme.onPrimaryContainer
-                            option == answered -> MaterialTheme.colorScheme.onErrorContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Button(
-                            onClick = { if (answered == null) onAnswerSelected(option) },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor),
-                        ) {
-                            Text(option)
-                        }
-                    }
-                    if (answered != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (quiz.currentIndex + 1 >= quiz.questions.size) strings.seeResults else strings.next)
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

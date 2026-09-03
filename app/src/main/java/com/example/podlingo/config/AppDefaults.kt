@@ -37,4 +37,9 @@ object AppDefaults {
 
     /** Multiple-choice options per end-of-episode quiz question (1 correct + this-1 distractors). */
     const val QUIZ_OPTION_COUNT = 4
+
+    /** Downloaded-episode storage cap, user-adjustable in Settings between these bounds - past the limit, episodes are deleted least-recently-played first (see EpisodeStorageManager). */
+    const val MIN_STORAGE_LIMIT_BYTES = 500L * 1024 * 1024
+    const val MAX_STORAGE_LIMIT_BYTES = 10L * 1024 * 1024 * 1024
+    const val DEFAULT_STORAGE_LIMIT_BYTES = 2L * 1024 * 1024 * 1024
 }

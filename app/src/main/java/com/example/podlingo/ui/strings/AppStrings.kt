@@ -52,14 +52,23 @@ interface AppStrings {
     val unknownWordsTitle: String
     val unknownWordsDescription: String
     fun aboutContentDescription(settingTitle: String): String
+    val storageTitle: String
+    fun storageUsageLabel(usedText: String, limitText: String): String
+    val storageLimitDescription: String
 
     // Home tab
+    val historyTab: String
     val noEpisodesPlayedYet: String
+    val noPodcastsPlayedYet: String
     val justNow: String
     fun minutesAgo(minutes: Long): String
     fun hoursAgo(hours: Long): String
     fun daysAgo(days: Long): String
     fun weeksAgo(weeks: Long): String
+    val quizMenuItem: String
+    val removeFromHistoryConfirmTitle: String
+    val removeFromHistoryConfirmText: String
+    val noUnknownWordsToQuizMessage: String
 
     // Library tab
     val podcastsTab: String
@@ -88,6 +97,8 @@ interface AppStrings {
     val transcriptTranscribing: String
     val transcriptProcessing: String
     val transcriptFailedTapToRetry: String
+    val episodeFilterAll: String
+    val episodeFilterDownloaded: String
 
     // Playlists
     val newPlaylistTitle: String
@@ -185,13 +196,25 @@ object EnglishStrings : AppStrings {
     override val unknownWordsTitle = "Words you don't know"
     override val unknownWordsDescription = "View and edit the words flagged for auto-translation."
     override fun aboutContentDescription(settingTitle: String) = "About $settingTitle"
+    override val storageTitle = "Downloaded episode storage"
+    override fun storageUsageLabel(usedText: String, limitText: String) = "$usedText of $limitText used"
+    override val storageLimitDescription = "Once downloaded episodes pass this limit, the least recently " +
+        "played ones are deleted automatically to make room. Their transcripts are kept, so they " +
+        "re-download instantly if you open them again."
 
+    override val historyTab = "History"
     override val noEpisodesPlayedYet = "No episodes played yet. Find something in Search."
+    override val noPodcastsPlayedYet = "No podcast history yet. Play something to see it here."
     override val justNow = "just now"
     override fun minutesAgo(minutes: Long) = "${minutes}m ago"
     override fun hoursAgo(hours: Long) = "${hours}h ago"
     override fun daysAgo(days: Long) = "${days}d ago"
     override fun weeksAgo(weeks: Long) = "${weeks}w ago"
+    override val quizMenuItem = "Quiz"
+    override val removeFromHistoryConfirmTitle = "Remove from history?"
+    override val removeFromHistoryConfirmText = "This removes it from your recently-played list. " +
+        "It's still there in the podcast's own episode list."
+    override val noUnknownWordsToQuizMessage = "No unknown words to quiz you on yet."
 
     override val podcastsTab = "Podcasts"
     override val playlistsTab = "Playlists"
@@ -216,6 +239,8 @@ object EnglishStrings : AppStrings {
     override val transcriptTranscribing = "Transcribing..."
     override val transcriptProcessing = "Processing..."
     override val transcriptFailedTapToRetry = "Failed - tap to retry"
+    override val episodeFilterAll = "All"
+    override val episodeFilterDownloaded = "Downloaded"
 
     override val newPlaylistTitle = "New playlist"
     override val renamePlaylistTitle = "Rename playlist"
@@ -310,13 +335,25 @@ object HebrewStrings : AppStrings {
     override val unknownWordsTitle = "מילים שאינך מכיר/ה"
     override val unknownWordsDescription = "צפייה ועריכה של המילים המסומנות לתרגום אוטומטי."
     override fun aboutContentDescription(settingTitle: String) = "מידע על $settingTitle"
+    override val storageTitle = "אחסון פרקים שהורדו"
+    override fun storageUsageLabel(usedText: String, limitText: String) = "$usedText מתוך $limitText בשימוש"
+    override val storageLimitDescription = "כשפרקים שהורדו עוברים את המגבלה הזו, הפרקים שהושמעו לאחרונה " +
+        "הכי פחות יימחקו אוטומטית כדי לפנות מקום. התמלול שלהם נשמר, כך שהם יורדו מחדש באופן מיידי " +
+        "אם תפתח אותם שוב."
 
+    override val historyTab = "היסטוריה"
     override val noEpisodesPlayedYet = "עדיין לא הושמעו פרקים. אפשר למצוא משהו במסך החיפוש."
+    override val noPodcastsPlayedYet = "עדיין אין היסטוריית פודקאסטים. השמעת משהו תוצג כאן."
     override val justNow = "הרגע"
     override fun minutesAgo(minutes: Long) = "לפני $minutes דק׳"
     override fun hoursAgo(hours: Long) = "לפני $hours שע׳"
     override fun daysAgo(days: Long) = "לפני $days ימים"
     override fun weeksAgo(weeks: Long) = "לפני $weeks שבועות"
+    override val quizMenuItem = "חידון"
+    override val removeFromHistoryConfirmTitle = "להסיר מההיסטוריה?"
+    override val removeFromHistoryConfirmText = "הפעולה תסיר את הפרק מרשימת ההשמעות האחרונות שלך. " +
+        "הוא עדיין יופיע ברשימת הפרקים של הפודקאסט עצמו."
+    override val noUnknownWordsToQuizMessage = "עדיין אין מילים לא מוכרות לחידון."
 
     override val podcastsTab = "פודקאסטים"
     override val playlistsTab = "פלייליסטים"
@@ -341,6 +378,8 @@ object HebrewStrings : AppStrings {
     override val transcriptTranscribing = "מתמלל..."
     override val transcriptProcessing = "מעבד..."
     override val transcriptFailedTapToRetry = "נכשל - יש להקיש כדי לנסות שוב"
+    override val episodeFilterAll = "הכול"
+    override val episodeFilterDownloaded = "שהורדו"
 
     override val newPlaylistTitle = "פלייליסט חדש"
     override val renamePlaylistTitle = "שינוי שם לפלייליסט"
