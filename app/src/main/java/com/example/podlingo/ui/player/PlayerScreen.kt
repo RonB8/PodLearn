@@ -139,6 +139,7 @@ fun PlayerScreen(
             onWordToggled = viewModel::onCalibrationWordToggled,
             onSelectAllToggled = viewModel::onCalibrationSelectAllToggled,
             onContinue = viewModel::onCalibrationContinue,
+            onDismiss = viewModel::onCalibrationDismissed,
         )
     }
     if (readyState?.quizPrompt == true) {
@@ -913,9 +914,13 @@ private fun VocabCalibrationDialog(
     onWordToggled: (String) -> Unit,
     onSelectAllToggled: () -> Unit,
     onContinue: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val strings = LocalAppStrings.current
-    Dialog(onDismissRequest = onContinue) {
+    // A true cancel, distinct from onContinue - dismissing (back gesture, tap-outside, the X
+    // below) leaves every word in this tier undecided, so none of them get silently marked
+    // "known" just because the user closed the panel without answering.
+    Dialog(onDismissRequest = onDismiss) {
         var visible by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { visible = true }
         AnimatedVisibility(
@@ -927,6 +932,11 @@ private fun VocabCalibrationDialog(
                     modifier = Modifier.padding(24.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Filled.Close, contentDescription = strings.dismiss)
+                        }
+                    }
                     Icon(
                         imageVector = Icons.Filled.School,
                         contentDescription = null,

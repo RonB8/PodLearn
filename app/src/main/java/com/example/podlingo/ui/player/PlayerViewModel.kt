@@ -204,6 +204,14 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** Closes the calibration panel without deciding anything - unlike [onCalibrationContinue], no word's status changes, so the same tier can still be offered again later instead of every word in it silently ending up "known". Still refreshes the in-playback popup list, a plain read of whatever's already decided from past sessions - skipping it would leave that feature dark for the rest of this playthrough over a dialog the user explicitly declined to answer. */
+    fun onCalibrationDismissed() {
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(vocabCalibration = null) else current
+        }
+        viewModelScope.launch { refreshUnknownWordOccurrences() }
+    }
+
     fun onCalibrationContinue() {
         val calibration = (_uiState.value as? PlayerScreenState.Ready)?.vocabCalibration ?: return
         viewModelScope.launch {
