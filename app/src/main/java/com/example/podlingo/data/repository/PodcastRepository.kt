@@ -4,6 +4,7 @@ import com.example.podlingo.data.local.dao.EpisodeDao
 import com.example.podlingo.data.local.dao.PodcastDao
 import com.example.podlingo.data.local.dao.RecentlyPlayedItem
 import com.example.podlingo.data.local.dao.RecentlyPlayedPodcast
+import com.example.podlingo.data.local.dao.SavedEpisodeItem
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.PodcastEntity
 import com.example.podlingo.data.remote.rss.RssParser
@@ -92,4 +93,6 @@ class PodcastRepository @Inject constructor(
     suspend fun removeFromHistory(episodeId: String) {
         episodeDao.clearLastPlayed(episodeId)
     }
+
+    fun getSavedEpisodes(): Flow<List<SavedEpisodeItem>> = episodeDao.getSavedEpisodes()
 }

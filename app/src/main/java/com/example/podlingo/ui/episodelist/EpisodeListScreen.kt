@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,11 +36,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.local.entity.EpisodeEntity
 import com.example.podlingo.data.local.entity.TranscriptStatus
+import com.example.podlingo.ui.common.ConfirmDialog
+import com.example.podlingo.ui.common.EpisodeRowMenu
+import com.example.podlingo.ui.common.formatDuration
+import com.example.podlingo.ui.common.formatPubDate
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 import com.example.podlingo.ui.strings.AppStrings
 import com.example.podlingo.ui.strings.LocalAppStrings
-import java.text.SimpleDateFormat
-import java.util.Locale
+import com.example.podlingo.ui.vocabulary.EpisodeQuizHost
 
 @Composable
 fun EpisodeListScreen(
@@ -52,11 +54,30 @@ fun EpisodeListScreen(
     val strings = LocalAppStrings.current
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val quiz by viewModel.quiz.collectAsStateWithLifecycle()
     var addToPlaylistEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var removingDownloadEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDownloadedOnly by rememberSaveable { mutableStateOf(false) }
+
+    EpisodeQuizHost(
+        quiz = quiz,
+        noUnknownWordsEvent = viewModel.noUnknownWordsEvent,
+        onAnswerSelected = viewModel::onQuizAnswerSelected,
+        onNext = viewModel::onQuizNext,
+        onDismiss = viewModel::onQuizDismissed,
+    )
 
     addToPlaylistEpisodeId?.let { episodeId ->
         AddToPlaylistDialog(episodeId = episodeId, onDismiss = { addToPlaylistEpisodeId = null })
+    }
+    removingDownloadEpisodeId?.let { episodeId ->
+        ConfirmDialog(
+            title = strings.removeDownloadConfirmTitle,
+            text = strings.removeDownloadConfirmText,
+            confirmLabel = strings.delete,
+            onConfirm = { viewModel.removeDownload(episodeId); removingDownloadEpisodeId = null },
+            onDismiss = { removingDownloadEpisodeId = null },
+        )
     }
 
     val displayedEpisodes = if (showDownloadedOnly) episodes.filter { it.localFilePath != null } else episodes
@@ -96,9 +117,12 @@ fun EpisodeListScreen(
                                 headlineContent = { Text(episode.title) },
                                 supportingContent = { EpisodeSupportingText(episode, strings) },
                                 trailingContent = {
-                                    IconButton(onClick = { addToPlaylistEpisodeId = episode.id }) {
-                                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = strings.addToPlaylist)
-                                    }
+                                    EpisodeRowMenu(
+                                        onAddToPlaylist = { addToPlaylistEpisodeId = episode.id },
+                                        onQuiz = { viewModel.startQuiz(episode.id) },
+                                        onDelete = { removingDownloadEpisodeId = episode.id },
+                                        deleteEnabled = episode.localFilePath != null,
+                                    )
                                 },
                                 modifier = Modifier.clickable { onOpenEpisode(episode.id) },
                             )
@@ -147,17 +171,6 @@ private fun EpisodeSupportingText(episode: EpisodeEntity, strings: AppStrings) {
         }
         Text(transcriptStatusLabel(episode.transcriptStatus, strings))
     }
-}
-
-private val pubDateFormat = SimpleDateFormat("MMM d, yyyy", Locale.US)
-
-private fun formatPubDate(epochMs: Long): String = pubDateFormat.format(epochMs)
-
-private fun formatDuration(seconds: Long): String {
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, secs) else "%d:%02d".format(minutes, secs)
 }
 
 private fun transcriptStatusLabel(status: TranscriptStatus, strings: AppStrings): String = when (status) {

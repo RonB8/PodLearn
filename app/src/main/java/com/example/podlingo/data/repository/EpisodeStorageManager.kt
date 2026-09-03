@@ -22,6 +22,14 @@ class EpisodeStorageManager @Inject constructor(
     suspend fun totalUsedBytes(): Long =
         episodeDao.getDownloadedEpisodesByLruOrder().sumOf { fileLength(it.localFilePath) }
 
+    /** Manual counterpart to the automatic LRU eviction below - the row menu's "Delete" action on a downloaded episode. Transcript, history and playlist membership are all untouched. */
+    suspend fun deleteDownload(episodeId: String) {
+        val path = episodeDao.getById(episodeId)?.localFilePath ?: return
+        if (File(path).delete()) {
+            episodeDao.clearLocalFilePath(episodeId)
+        }
+    }
+
     /**
      * Deletes downloaded audio files, least-recently-played first, until total usage is back
      * under the configured limit. [protectedEpisodeId] (typically the episode that was just

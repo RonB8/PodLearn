@@ -10,8 +10,8 @@ import com.example.podlingo.core.WordDifficultyRanker
 import com.example.podlingo.core.WordNormalizer
 import com.example.podlingo.core.WordTiming
 import com.example.podlingo.data.local.entity.EpisodeEntity
-import com.example.podlingo.data.local.entity.TranscriptStatus
 import com.example.podlingo.data.local.entity.WordKnowledgeStatus
+import com.example.podlingo.data.repository.EpisodeDownloadManager
 import com.example.podlingo.data.repository.PodcastRepository
 import com.example.podlingo.data.repository.PreprocessingProgress
 import com.example.podlingo.data.repository.SettingsRepository
@@ -39,6 +39,7 @@ class PlayerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val podcastRepository: PodcastRepository,
     private val transcriptRepository: TranscriptRepository,
+    private val episodeDownloadManager: EpisodeDownloadManager,
     private val translationRepository: TranslationRepository,
     private val playerController: PlayerController,
     private val hebrewSpeaker: HebrewSpeaker,
@@ -90,11 +91,7 @@ class PlayerViewModel @Inject constructor(
                 _uiState.value = PlayerScreenState.Failed("Episode not found")
                 return@launch
             }
-            if (episode.transcriptStatus == TranscriptStatus.READY) {
-                startPlayback(episode)
-            } else {
-                runPreprocessing(episode)
-            }
+            observeDownload(episode)
         }
 
         viewModelScope.launch {
@@ -319,9 +316,16 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private suspend fun runPreprocessing(episode: EpisodeEntity) {
-        transcriptRepository.preprocess(episode).collect { progress ->
+    // Routed through EpisodeDownloadManager rather than calling transcriptRepository.preprocess()
+    // directly - that keeps a download running (and shared with any other observer) even if this
+    // ViewModel is cleared because the user left the Player screen. Every episode goes through
+    // here, READY ones included: preprocess() itself is what re-downloads audio that storage
+    // eviction cleared while the transcript stayed READY, so skipping it here would leave a
+    // READY-but-evicted episode unable to ever play again.
+    private suspend fun observeDownload(episode: EpisodeEntity) {
+        episodeDownloadManager.progressFor(episode).collect { progress ->
             when (progress) {
+                null -> Unit
                 is PreprocessingProgress.Ready -> {
                     val refreshed = podcastRepository.getEpisode(episodeId) ?: episode
                     startPlayback(refreshed)

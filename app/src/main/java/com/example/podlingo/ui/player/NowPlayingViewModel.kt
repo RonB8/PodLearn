@@ -2,6 +2,8 @@ package com.example.podlingo.ui.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.podlingo.data.repository.EpisodeDownload
+import com.example.podlingo.data.repository.EpisodeDownloadManager
 import com.example.podlingo.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -27,7 +29,10 @@ data class NowPlayingUi(
 @HiltViewModel
 class NowPlayingViewModel @Inject constructor(
     private val playerController: PlayerController,
+    episodeDownloadManager: EpisodeDownloadManager,
 ) : ViewModel() {
+
+    val activeDownloads: StateFlow<List<EpisodeDownload>> = episodeDownloadManager.activeDownloads
 
     val nowPlaying: StateFlow<NowPlayingUi?> = playerController.playerState
         .map { state ->

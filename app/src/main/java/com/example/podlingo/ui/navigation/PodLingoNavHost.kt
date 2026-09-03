@@ -28,6 +28,7 @@ import androidx.navigation.navArgument
 import com.example.podlingo.ui.episodelist.EpisodeListScreen
 import com.example.podlingo.ui.main.MainScreen
 import com.example.podlingo.ui.main.MainTabBar
+import com.example.podlingo.ui.player.DownloadingBanner
 import com.example.podlingo.ui.player.MiniPlayerBar
 import com.example.podlingo.ui.player.NowPlayingViewModel
 import com.example.podlingo.ui.player.PlayerScreen
@@ -42,6 +43,7 @@ private val RESTORABLE_ROUTES = setOf(Routes.MAIN, Routes.SETTINGS)
 fun PodLingoNavHost(navController: NavHostController = rememberNavController()) {
     val nowPlayingViewModel: NowPlayingViewModel = hiltViewModel()
     val nowPlaying by nowPlayingViewModel.nowPlaying.collectAsStateWithLifecycle()
+    val activeDownloads by nowPlayingViewModel.activeDownloads.collectAsStateWithLifecycle()
     val appNavigationViewModel: AppNavigationViewModel = hiltViewModel()
     // currentBackStackEntryAsState() only reflects the *settled* (post-transition) entry - with
     // the Player route's dismiss transition below taking a couple hundred ms, that would leave
@@ -85,6 +87,17 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
             // Mini-player above, Home/Search/Library tab bar below it (only on the MAIN shell) -
             // the request was explicitly for the tabs to sit below the play bar, not replace it.
             Column {
+                // Hidden on the Player screen itself (any episode) the same way MiniPlayerBar is -
+                // once you're on Player, that screen's own PreprocessingView already shows this
+                // episode's progress in full, so the slim banner would just duplicate it.
+                if (activeDownloads.isNotEmpty() && currentRoute != Routes.PLAYER) {
+                    DownloadingBanner(
+                        downloads = activeDownloads,
+                        onClick = { episodeId ->
+                            navController.navigate(Routes.player(episodeId)) { launchSingleTop = true }
+                        },
+                    )
+                }
                 if (nowPlaying != null && currentRoute != Routes.PLAYER) {
                     MiniPlayerBar(
                         nowPlaying = nowPlaying!!,

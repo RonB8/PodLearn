@@ -5,6 +5,7 @@ package com.example.podlingo.ui.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -58,7 +59,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -105,6 +105,7 @@ import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 import com.example.podlingo.ui.strings.AppStrings
 import com.example.podlingo.ui.strings.LocalAppStrings
 import com.example.podlingo.ui.vocabulary.VocabQuizDialog
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -233,32 +234,43 @@ private fun LoadingView() {
 @Composable
 private fun PreprocessingView(state: PlayerScreenState.Preprocessing) {
     val strings = LocalAppStrings.current
+    val fraction = (state.progress as? PreprocessingProgress.Downloading)?.fraction?.takeIf { it >= 0f }
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction ?: 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "preprocessingProgress",
+    )
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = preprocessingLabel(state.progress, strings), style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        val fraction = (state.progress as? PreprocessingProgress.Downloading)?.fraction
-        if (fraction != null && fraction >= 0f) {
-            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Box(modifier = Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+            if (fraction != null) {
+                CircularProgressIndicator(
+                    progress = { animatedFraction },
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 6.dp,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+                Text(
+                    text = "${(fraction * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                CircularProgressIndicator(modifier = Modifier.fillMaxSize(), strokeWidth = 6.dp)
+                Icon(
+                    imageVector = Icons.Filled.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(text = state.progress.label(strings), style = MaterialTheme.typography.titleMedium)
     }
-}
-
-private fun preprocessingLabel(progress: PreprocessingProgress, strings: AppStrings): String = when (progress) {
-    is PreprocessingProgress.Downloading -> strings.downloadingEpisode
-    is PreprocessingProgress.Transcribing -> if (progress.chunkCount > 1) {
-        strings.transcribingSpeechPart(progress.chunkIndex, progress.chunkCount)
-    } else {
-        strings.transcribingSpeech
-    }
-    PreprocessingProgress.Processing -> strings.buildingTranscript
-    PreprocessingProgress.Ready -> strings.ready
-    is PreprocessingProgress.Failed -> progress.message
 }
 
 @Composable

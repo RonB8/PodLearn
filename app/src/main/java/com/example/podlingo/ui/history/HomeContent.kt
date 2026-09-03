@@ -2,7 +2,6 @@
 
 package com.example.podlingo.ui.history
 
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,42 +10,33 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.podlingo.data.local.dao.RecentlyPlayedItem
 import com.example.podlingo.data.local.dao.RecentlyPlayedPodcast
 import com.example.podlingo.ui.common.ArtworkThumbnail
+import com.example.podlingo.ui.common.ConfirmDialog
+import com.example.podlingo.ui.common.EpisodeRowMenu
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 import com.example.podlingo.ui.strings.AppStrings
 import com.example.podlingo.ui.strings.LocalAppStrings
-import com.example.podlingo.ui.vocabulary.VocabQuizDialog
+import com.example.podlingo.ui.vocabulary.EpisodeQuizHost
 import java.util.concurrent.TimeUnit
 
 /** The Home tab: your episode history and, in a second sub-tab, the podcasts behind it. Pull down to refresh every subscribed podcast's feed for new episodes. */
@@ -57,7 +47,6 @@ fun HomeContent(
     viewModel: HistoryViewModel = hiltViewModel(),
 ) {
     val strings = LocalAppStrings.current
-    val context = LocalContext.current
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsStateWithLifecycle()
     val recentlyPlayedPodcasts by viewModel.recentlyPlayedPodcasts.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
@@ -67,36 +56,24 @@ fun HomeContent(
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        viewModel.noUnknownWordsEvent.collect {
-            Toast.makeText(context, strings.noUnknownWordsToQuizMessage, Toast.LENGTH_SHORT).show()
-        }
-    }
+    EpisodeQuizHost(
+        quiz = quiz,
+        noUnknownWordsEvent = viewModel.noUnknownWordsEvent,
+        onAnswerSelected = viewModel::onQuizAnswerSelected,
+        onNext = viewModel::onQuizNext,
+        onDismiss = viewModel::onQuizDismissed,
+    )
 
     addToPlaylistEpisodeId?.let { episodeId ->
         AddToPlaylistDialog(episodeId = episodeId, onDismiss = { addToPlaylistEpisodeId = null })
     }
     removingEpisodeId?.let { episodeId ->
-        AlertDialog(
-            onDismissRequest = { removingEpisodeId = null },
-            title = { Text(strings.removeFromHistoryConfirmTitle) },
-            text = { Text(strings.removeFromHistoryConfirmText) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.removeFromHistory(episodeId); removingEpisodeId = null }) {
-                    Text(strings.delete)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { removingEpisodeId = null }) { Text(strings.cancel) }
-            },
-        )
-    }
-    quiz?.let { quizState ->
-        VocabQuizDialog(
-            quiz = quizState,
-            onAnswerSelected = viewModel::onQuizAnswerSelected,
-            onNext = viewModel::onQuizNext,
-            onDismiss = viewModel::onQuizDismissed,
+        ConfirmDialog(
+            title = strings.removeFromHistoryConfirmTitle,
+            text = strings.removeFromHistoryConfirmText,
+            confirmLabel = strings.delete,
+            onConfirm = { viewModel.removeFromHistory(episodeId); removingEpisodeId = null },
+            onDismiss = { removingEpisodeId = null },
         )
     }
 
@@ -110,7 +87,7 @@ fun HomeContent(
             Tab(
                 selected = pagerState.currentPage == 1,
                 onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                text = { Text(strings.podcastsTab) },
+                text = { Text(strings.homePodcastsTab) },
             )
         }
         PullToRefreshBox(
@@ -154,7 +131,6 @@ private fun EpisodeHistoryList(
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(episodes, key = { it.id }) { item ->
-                var showMenu by remember { mutableStateOf(false) }
                 ListItem(
                     leadingContent = { ArtworkThumbnail(artworkUrl = item.artworkUrl) },
                     headlineContent = { Text(item.title) },
@@ -169,25 +145,11 @@ private fun EpisodeHistoryList(
                         }
                     },
                     trailingContent = {
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = strings.moreOptionsContentDescription)
-                            }
-                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(strings.addToPlaylist) },
-                                    onClick = { showMenu = false; onAddToPlaylist(item.id) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(strings.quizMenuItem) },
-                                    onClick = { showMenu = false; onQuiz(item.id) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(strings.delete) },
-                                    onClick = { showMenu = false; onRemove(item.id) },
-                                )
-                            }
-                        }
+                        EpisodeRowMenu(
+                            onAddToPlaylist = { onAddToPlaylist(item.id) },
+                            onQuiz = { onQuiz(item.id) },
+                            onDelete = { onRemove(item.id) },
+                        )
                     },
                     modifier = Modifier.clickable { onOpenEpisode(item.id) },
                 )

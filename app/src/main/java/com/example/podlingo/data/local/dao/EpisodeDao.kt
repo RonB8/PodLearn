@@ -31,6 +31,16 @@ data class RecentlyPlayedPodcast(
     val lastPlayedEpochMs: Long,
 )
 
+/** Joined projection for the Library tab's "Saved" list - every downloaded episode across all podcasts. */
+data class SavedEpisodeItem(
+    val id: String,
+    val title: String,
+    val podcastTitle: String,
+    val artworkUrl: String?,
+    val pubDateEpochMs: Long?,
+    val durationSec: Long?,
+)
+
 @Dao
 interface EpisodeDao {
 
@@ -93,4 +103,18 @@ interface EpisodeDao {
         """,
     )
     fun getRecentlyPlayedPodcasts(): Flow<List<RecentlyPlayedPodcast>>
+
+    /** Every downloaded episode across all podcasts, newest published first - the Library tab's "Saved" list. */
+    @Query(
+        """
+        SELECT episodes.id AS id, episodes.title AS title, podcasts.title AS podcastTitle,
+               podcasts.imageUrl AS artworkUrl, episodes.pubDateEpochMs AS pubDateEpochMs,
+               episodes.durationSec AS durationSec
+        FROM episodes
+        INNER JOIN podcasts ON podcasts.id = episodes.podcastId
+        WHERE episodes.localFilePath IS NOT NULL
+        ORDER BY episodes.pubDateEpochMs DESC
+        """,
+    )
+    fun getSavedEpisodes(): Flow<List<SavedEpisodeItem>>
 }

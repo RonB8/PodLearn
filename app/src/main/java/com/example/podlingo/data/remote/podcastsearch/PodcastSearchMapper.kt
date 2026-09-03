@@ -12,7 +12,9 @@ data class PodcastSearchResult(
 /**
  * Maps iTunes's search response to [PodcastSearchResult]s. iTunes mixes in non-podcast or
  * malformed entries for some queries, so any result missing a feed URL (the one field the rest
- * of the app can't do without) is dropped rather than surfaced as a broken result.
+ * of the app can't do without) is dropped rather than surfaced as a broken result. iTunes can
+ * also list the same feed twice (regional/storefront duplicates) - the UI keys its results list
+ * by feedUrl, so a duplicate here would crash it, hence the dedup.
  */
 object PodcastSearchMapper {
 
@@ -27,5 +29,5 @@ object PodcastSearchMapper {
                 genre = dto.primaryGenreName,
                 episodeCount = dto.trackCount,
             )
-        }
+        }.distinctBy { it.feedUrl }
 }

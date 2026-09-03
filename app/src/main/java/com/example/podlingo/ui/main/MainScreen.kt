@@ -60,7 +60,11 @@ fun MainScreen(
             when (page) {
                 0 -> HomeContent(onOpenEpisode = onOpenEpisode, onOpenPodcast = onOpenPodcast)
                 1 -> SearchContent(onAdded = onPodcastAdded)
-                else -> LibraryTab(onOpenPodcast = onOpenPodcast, onOpenPlaylist = onOpenPlaylist)
+                else -> LibraryTab(
+                    onOpenEpisode = onOpenEpisode,
+                    onOpenPodcast = onOpenPodcast,
+                    onOpenPlaylist = onOpenPlaylist,
+                )
             }
         }
     }

@@ -58,6 +58,7 @@ interface AppStrings {
 
     // Home tab
     val historyTab: String
+    val homePodcastsTab: String
     val noEpisodesPlayedYet: String
     val noPodcastsPlayedYet: String
     val justNow: String
@@ -72,7 +73,9 @@ interface AppStrings {
 
     // Library tab
     val podcastsTab: String
+    val showsTab: String
     val playlistsTab: String
+    val noSavedEpisodesYet: String
 
     // Search / add podcast
     val searchPodcastsLabel: String
@@ -99,6 +102,8 @@ interface AppStrings {
     val transcriptFailedTapToRetry: String
     val episodeFilterAll: String
     val episodeFilterDownloaded: String
+    val removeDownloadConfirmTitle: String
+    val removeDownloadConfirmText: String
 
     // Playlists
     val newPlaylistTitle: String
@@ -115,7 +120,8 @@ interface AppStrings {
     val createAndAddContentDescription: String
     val playlistFallbackTitle: String
     val noEpisodesInPlaylist: String
-    val removeFromPlaylistContentDescription: String
+    val removeFromPlaylistConfirmTitle: String
+    val removeFromPlaylistConfirmText: String
 
     // Unknown words / vocabulary
     val wordsYouDontKnowTitle: String
@@ -128,6 +134,8 @@ interface AppStrings {
     fun transcribingSpeechPart(chunkIndex: Int, chunkCount: Int): String
     val transcribingSpeech: String
     val buildingTranscript: String
+    /** Trailing text on the app-wide downloading banner when more than one episode is downloading, e.g. "+2 more". */
+    fun moreDownloadsSuffix(count: Int): String
     val transcriptChip: String
     val hardWordChip: String
     val autoTranslateChip: String
@@ -203,6 +211,7 @@ object EnglishStrings : AppStrings {
         "re-download instantly if you open them again."
 
     override val historyTab = "History"
+    override val homePodcastsTab = "Your Shows"
     override val noEpisodesPlayedYet = "No episodes played yet. Find something in Search."
     override val noPodcastsPlayedYet = "No podcast history yet. Play something to see it here."
     override val justNow = "just now"
@@ -216,8 +225,10 @@ object EnglishStrings : AppStrings {
         "It's still there in the podcast's own episode list."
     override val noUnknownWordsToQuizMessage = "No unknown words to quiz you on yet."
 
-    override val podcastsTab = "Podcasts"
+    override val podcastsTab = "Saved"
+    override val showsTab = "Shows"
     override val playlistsTab = "Playlists"
+    override val noSavedEpisodesYet = "No downloaded episodes yet."
 
     override val searchPodcastsLabel = "Search podcasts"
     override fun noPodcastsFoundFor(query: String) = "No podcasts found for \"$query\""
@@ -241,6 +252,9 @@ object EnglishStrings : AppStrings {
     override val transcriptFailedTapToRetry = "Failed - tap to retry"
     override val episodeFilterAll = "All"
     override val episodeFilterDownloaded = "Downloaded"
+    override val removeDownloadConfirmTitle = "Remove download?"
+    override val removeDownloadConfirmText = "This deletes the downloaded audio to free up space. " +
+        "The transcript stays, so it re-downloads instantly if you open the episode again."
 
     override val newPlaylistTitle = "New playlist"
     override val renamePlaylistTitle = "Rename playlist"
@@ -256,7 +270,8 @@ object EnglishStrings : AppStrings {
     override val createAndAddContentDescription = "Create and add"
     override val playlistFallbackTitle = "Playlist"
     override val noEpisodesInPlaylist = "No episodes in this playlist yet. Add some from the player screen."
-    override val removeFromPlaylistContentDescription = "Remove from playlist"
+    override val removeFromPlaylistConfirmTitle = "Remove from playlist?"
+    override val removeFromPlaylistConfirmText = "This only removes it from this playlist - the episode itself isn't affected."
 
     override val wordsYouDontKnowTitle = "Words you don't know"
     override val noUnknownWordsYet = "No unknown words yet. Mark words in the player's \"Auto translate\" " +
@@ -269,6 +284,7 @@ object EnglishStrings : AppStrings {
         "Transcribing speech (part $chunkIndex/$chunkCount)..."
     override val transcribingSpeech = "Transcribing speech (this can take a while)..."
     override val buildingTranscript = "Building transcript..."
+    override fun moreDownloadsSuffix(count: Int) = "+$count more"
     override val transcriptChip = "Transcript"
     override val hardWordChip = "Hard word"
     override val autoTranslateChip = "Auto translate"
@@ -342,6 +358,7 @@ object HebrewStrings : AppStrings {
         "אם תפתח אותם שוב."
 
     override val historyTab = "היסטוריה"
+    override val homePodcastsTab = "התוכניות שלך"
     override val noEpisodesPlayedYet = "עדיין לא הושמעו פרקים. אפשר למצוא משהו במסך החיפוש."
     override val noPodcastsPlayedYet = "עדיין אין היסטוריית פודקאסטים. השמעת משהו תוצג כאן."
     override val justNow = "הרגע"
@@ -355,8 +372,10 @@ object HebrewStrings : AppStrings {
         "הוא עדיין יופיע ברשימת הפרקים של הפודקאסט עצמו."
     override val noUnknownWordsToQuizMessage = "עדיין אין מילים לא מוכרות לחידון."
 
-    override val podcastsTab = "פודקאסטים"
+    override val podcastsTab = "שמורים"
+    override val showsTab = "תוכניות"
     override val playlistsTab = "פלייליסטים"
+    override val noSavedEpisodesYet = "עדיין אין פרקים שהורדו."
 
     override val searchPodcastsLabel = "חיפוש פודקאסטים"
     override fun noPodcastsFoundFor(query: String) = "לא נמצאו פודקאסטים עבור \"$query\""
@@ -380,6 +399,9 @@ object HebrewStrings : AppStrings {
     override val transcriptFailedTapToRetry = "נכשל - יש להקיש כדי לנסות שוב"
     override val episodeFilterAll = "הכול"
     override val episodeFilterDownloaded = "שהורדו"
+    override val removeDownloadConfirmTitle = "להסיר את ההורדה?"
+    override val removeDownloadConfirmText = "הפעולה תמחק את קובץ השמע שהורד כדי לפנות מקום. " +
+        "התמלול נשמר, כך שהפרק יורד מחדש באופן מיידי אם תפתח אותו שוב."
 
     override val newPlaylistTitle = "פלייליסט חדש"
     override val renamePlaylistTitle = "שינוי שם לפלייליסט"
@@ -395,7 +417,8 @@ object HebrewStrings : AppStrings {
     override val createAndAddContentDescription = "יצירה והוספה"
     override val playlistFallbackTitle = "פלייליסט"
     override val noEpisodesInPlaylist = "עדיין אין פרקים בפלייליסט הזה. אפשר להוסיף פרקים ממסך הנגן."
-    override val removeFromPlaylistContentDescription = "הסרה מהפלייליסט"
+    override val removeFromPlaylistConfirmTitle = "להסיר מהפלייליסט?"
+    override val removeFromPlaylistConfirmText = "הפעולה רק תסיר את הפרק מהפלייליסט הזה - הפרק עצמו לא ייפגע."
 
     override val wordsYouDontKnowTitle = "מילים שאינך מכיר/ה"
     override val noUnknownWordsYet = "עדיין אין מילים לא מוכרות. יש לסמן מילים בפאנל \"תרגום אוטומטי\" " +
@@ -408,6 +431,7 @@ object HebrewStrings : AppStrings {
         "מתמלל דיבור (חלק $chunkIndex מתוך $chunkCount)..."
     override val transcribingSpeech = "מתמלל דיבור (זה עשוי לקחת זמן)..."
     override val buildingTranscript = "בונה תמלול..."
+    override fun moreDownloadsSuffix(count: Int) = "+$count נוספים"
     override val transcriptChip = "תמלול"
     override val hardWordChip = "מילה קשה"
     override val autoTranslateChip = "תרגום אוטומטי"
