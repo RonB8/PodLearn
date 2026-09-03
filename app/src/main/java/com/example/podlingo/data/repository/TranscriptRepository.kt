@@ -42,15 +42,23 @@ class TranscriptRepository @Inject constructor(
     fun preprocess(episode: EpisodeEntity): Flow<PreprocessingProgress> = channelFlow {
         val localFile = resolveLocalFile(episode)
         val alreadyTranscribed = episode.transcriptStatus == TranscriptStatus.READY
-        // A ready transcript with its audio still on disk needs nothing further - the common case.
-        // If the audio was evicted for storage space (see EpisodeStorageManager) but the transcript
-        // is still cached, only the download below re-runs; transcription is never repeated.
-        if (alreadyTranscribed && localFile.exists()) {
-            send(PreprocessingProgress.Ready)
-            return@channelFlow
-        }
 
-        if (!localFile.exists()) {
+        if (localFile.exists()) {
+            // The file is already on disk - the common case is a ready transcript whose audio
+            // never got evicted, but resolveLocalFile() also lands here for a stray leftover file
+            // (e.g. an old cascade-delete bug, or an app process killed mid-write) that happens to
+            // already sit at the deterministic path for a NULL localFilePath. Either way, keep the
+            // DB in sync with the filesystem here - otherwise a stray file gets silently adopted
+            // for transcription (reaching READY) while localFilePath stays null forever, and every
+            // later playback attempt fails with "audio file is missing" with no way to recover.
+            if (episode.localFilePath != localFile.absolutePath) {
+                episodeDao.updateLocalFilePath(episode.id, localFile.absolutePath)
+            }
+            if (alreadyTranscribed) {
+                send(PreprocessingProgress.Ready)
+                return@channelFlow
+            }
+        } else {
             // Only flip the persisted status for a genuinely new episode - re-downloading evicted
             // audio for an already-READY transcript shouldn't touch that status either way, since
             // the transcript itself was never affected.
@@ -74,11 +82,10 @@ class TranscriptRepository @Inject constructor(
             }
             episodeDao.updateLocalFilePath(episode.id, localFile.absolutePath)
             episodeStorageManager.evictIfOverLimit(protectedEpisodeId = episode.id)
-        }
-
-        if (alreadyTranscribed) {
-            send(PreprocessingProgress.Ready)
-            return@channelFlow
+            if (alreadyTranscribed) {
+                send(PreprocessingProgress.Ready)
+                return@channelFlow
+            }
         }
 
         send(PreprocessingProgress.Transcribing())

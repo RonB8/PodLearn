@@ -211,7 +211,7 @@ fun PlayerScreen(
                     onToggleAutoTranslate = viewModel::toggleAutoTranslate,
                     onDismissTranslationPopup = viewModel::dismissTranslationPopup,
                 )
-                is PlayerScreenState.Failed -> FailedView(state.message)
+                is PlayerScreenState.Failed -> FailedView(state.message, onRetry = viewModel::retry)
             }
         }
     }
@@ -274,9 +274,16 @@ private fun PreprocessingView(state: PlayerScreenState.Preprocessing) {
 }
 
 @Composable
-private fun FailedView(message: String) {
-    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+private fun FailedView(message: String, onRetry: () -> Unit) {
+    val strings = LocalAppStrings.current
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(text = message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRetry) { Text(strings.retry) }
     }
 }
 

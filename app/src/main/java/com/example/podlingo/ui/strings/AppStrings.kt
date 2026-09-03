@@ -25,6 +25,7 @@ interface AppStrings {
     val dismiss: String
     val addToPlaylist: String
     val translatingEllipsis: String
+    val retry: String
 
     // Home/Search/Library tab bar + top bar
     val tabHome: String
@@ -174,6 +175,7 @@ object EnglishStrings : AppStrings {
     override val dismiss = "Dismiss"
     override val addToPlaylist = "Add to playlist"
     override val translatingEllipsis = "Translating…"
+    override val retry = "Retry"
 
     override val tabHome = "Home"
     override val tabSearch = "Search"
@@ -323,6 +325,7 @@ object HebrewStrings : AppStrings {
     override val dismiss = "סגירה"
     override val addToPlaylist = "הוספה לפלייליסט"
     override val translatingEllipsis = "מתרגם…"
+    override val retry = "ניסיון חוזר"
 
     override val tabHome = "בית"
     override val tabSearch = "חיפוש"

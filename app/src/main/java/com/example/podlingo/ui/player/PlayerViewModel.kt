@@ -85,14 +85,7 @@ class PlayerViewModel @Inject constructor(
     private var pendingQuizWords: List<String> = emptyList()
 
     init {
-        viewModelScope.launch {
-            val episode = podcastRepository.getEpisode(episodeId)
-            if (episode == null) {
-                _uiState.value = PlayerScreenState.Failed("Episode not found")
-                return@launch
-            }
-            observeDownload(episode)
-        }
+        viewModelScope.launch { loadEpisode() }
 
         viewModelScope.launch {
             playerController.playerState.collect { playerUiState ->
@@ -314,6 +307,20 @@ class PlayerViewModel @Inject constructor(
                 current
             }
         }
+    }
+
+    private suspend fun loadEpisode() {
+        val episode = podcastRepository.getEpisode(episodeId)
+        if (episode == null) {
+            _uiState.value = PlayerScreenState.Failed("Episode not found")
+            return
+        }
+        observeDownload(episode)
+    }
+
+    /** The Failed screen's retry action - re-runs the same load path a fresh episode open would take. */
+    fun retry() {
+        viewModelScope.launch { loadEpisode() }
     }
 
     // Routed through EpisodeDownloadManager rather than calling transcriptRepository.preprocess()
