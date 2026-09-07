@@ -28,8 +28,8 @@ data class EpisodeEntity(
     val transcriptStatus: TranscriptStatus = TranscriptStatus.NONE,
     val transcriptError: String? = null,
     val lastPlayedEpochMs: Long? = null,
-    /** Whether the vocabulary calibration panel has already been offered for this episode - once true, opening it again never auto-prompts, only an explicit "Auto translate" chip tap does. */
+    /** No longer read or written - kept only so the column stays in the existing schema without a migration. */
     val vocabCalibrated: Boolean = false,
-    /** Whether the pre-episode "quiz yourself on the words you don't know" flow has been completed for this episode - only true once the user finishes it, not merely declines, so a decline offers it again on the next fresh start. */
+    /** Whether the pre-episode "Word Check" assessment has fully resolved every word for this episode - only true once nothing was left unanswered/skipped, so a decline or a partial pass offers it again (picking up just what's left) on the next fresh start. */
     val startQuizCompleted: Boolean = false,
 )

@@ -7,6 +7,9 @@ import com.example.podlingo.data.repository.TranscriptRepository
 import com.example.podlingo.data.repository.WordKnowledgeRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Builds the end-of-episode vocabulary quiz for a given episode - shared between [PlayerViewModel]
@@ -27,11 +30,23 @@ class VocabQuizBuilder @Inject constructor(
             .map { it.word }
     }
 
-    /** One question per word: the real cached/fetched translation plus 3 distractors sampled from other real translations - never an LLM call. */
-    suspend fun buildQuizQuestions(words: List<String>): List<VocabQuizQuestion> {
+    /**
+     * One question per word: the real cached/fetched translation plus 3 distractors sampled from
+     * other real translations - never an LLM call for the distractors. Translation lookups (a
+     * cache miss is a live network call) run in bounded-concurrency batches rather than one at a
+     * time - a large tier of all-uncached words could otherwise take the better part of a minute
+     * to open Word Check, with nothing on screen to show it's working.
+     */
+    suspend fun buildQuizQuestions(words: List<String>): List<VocabQuizQuestion> = coroutineScope {
+        val translations = mutableMapOf<String, String?>()
+        for (batch in words.chunked(AppDefaults.TRANSLATION_FETCH_CONCURRENCY)) {
+            translations += batch.map { word ->
+                async { word to wordKnowledgeRepository.getOrFetchTranslation(word) }
+            }.awaitAll()
+        }
         val questions = mutableListOf<VocabQuizQuestion>()
         for (word in words) {
-            val correct = wordKnowledgeRepository.getOrFetchTranslation(word) ?: continue
+            val correct = translations[word] ?: continue
             val distractorCount = AppDefaults.QUIZ_OPTION_COUNT - 1
             val distractors = wordKnowledgeRepository.sampleDistractors(word, distractorCount).toMutableSet()
             if (distractors.size < distractorCount) {
@@ -43,6 +58,6 @@ class VocabQuizBuilder @Inject constructor(
             if (distractors.size < distractorCount) continue
             questions += VocabQuizQuestion(word = word, correctAnswer = correct, options = (distractors + correct).shuffled())
         }
-        return questions
+        questions
     }
 }

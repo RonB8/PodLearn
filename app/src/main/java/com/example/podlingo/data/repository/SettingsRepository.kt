@@ -27,12 +27,30 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _hardWordModeEnabled = MutableStateFlow(prefs.getBoolean(KEY_HARD_WORD_MODE, false))
-    val hardWordModeEnabled: StateFlow<Boolean> = _hardWordModeEnabled.asStateFlow()
+    /** Manual pause-trigger flavor: translate just the sentence's hardest word instead of the whole sentence. */
+    private val _hardWordModeTriggerEnabled = MutableStateFlow(prefs.getBoolean(KEY_HARD_WORD_MODE_TRIGGER, false))
+    val hardWordModeTriggerEnabled: StateFlow<Boolean> = _hardWordModeTriggerEnabled.asStateFlow()
 
-    fun setHardWordModeEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_HARD_WORD_MODE, enabled).apply()
-        _hardWordModeEnabled.value = enabled
+    fun setHardWordModeTriggerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HARD_WORD_MODE_TRIGGER, enabled).apply()
+        _hardWordModeTriggerEnabled.value = enabled
+    }
+
+    /**
+     * Auto-translate flavor: when Auto-translate reads a sentence aloud, read just the flagged
+     * unknown word instead of the whole sentence. Defaults to whatever the trigger flavor above is
+     * already set to the first time this key is ever read - the two used to be one shared setting,
+     * so splitting them shouldn't change anyone's existing behavior until they deliberately set
+     * the two independently.
+     */
+    private val _hardWordModeAutoTranslateEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_HARD_WORD_MODE_AUTO_TRANSLATE, prefs.getBoolean(KEY_HARD_WORD_MODE_TRIGGER, false)),
+    )
+    val hardWordModeAutoTranslateEnabled: StateFlow<Boolean> = _hardWordModeAutoTranslateEnabled.asStateFlow()
+
+    fun setHardWordModeAutoTranslateEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HARD_WORD_MODE_AUTO_TRANSLATE, enabled).apply()
+        _hardWordModeAutoTranslateEnabled.value = enabled
     }
 
     private val _autoFullSentenceEnabled =
@@ -135,7 +153,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
 
     companion object {
         private const val PREFS_NAME = "podlingo_settings"
-        private const val KEY_HARD_WORD_MODE = "hard_word_mode_enabled"
+        private const val KEY_HARD_WORD_MODE_TRIGGER = "hard_word_mode_enabled"
+        private const val KEY_HARD_WORD_MODE_AUTO_TRANSLATE = "hard_word_mode_auto_translate_enabled"
         private const val KEY_AUTO_FULL_SENTENCE = "auto_full_sentence_enabled"
         private const val KEY_AUTO_TRANSLATE = "auto_translate_enabled"
         private const val KEY_AUTO_TRANSLATE_READ_ALOUD = "auto_translate_read_aloud_enabled"

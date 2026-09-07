@@ -46,13 +46,13 @@ object AppDefaults {
     /** Multiple-choice options per end-of-episode quiz question (1 correct + this-1 distractors). */
     const val QUIZ_OPTION_COUNT = 4
 
+    /** Live translation lookups per batch when building a tier of quiz questions - bounds how many concurrent OpenAI calls a single Word Check tier can fire off at once. */
+    const val TRANSLATION_FETCH_CONCURRENCY = 8
+
     /** Downloaded-episode storage cap, user-adjustable in Settings between these bounds - past the limit, episodes are deleted least-recently-played first (see EpisodeStorageManager). */
     const val MIN_STORAGE_LIMIT_BYTES = 500L * 1024 * 1024
     const val MAX_STORAGE_LIMIT_BYTES = 10L * 1024 * 1024 * 1024
     const val DEFAULT_STORAGE_LIMIT_BYTES = 2L * 1024 * 1024 * 1024
-
-    /** In the pre-episode start quiz, missing more than this fraction of a tier's questions pulls in another bunch from the next-easier tier - a much lower bar than calibration's, since these are words already known to be unknown, so any real trouble with a tier is worth probing further down. */
-    const val START_QUIZ_TIER_CASCADE_WRONG_THRESHOLD = 0.15
 
     /** How long the start quiz holds each answer's right/wrong reveal before auto-advancing - long enough to register, short enough to stay quick. */
     const val START_QUIZ_AUTO_ADVANCE_DELAY_MS = 900L

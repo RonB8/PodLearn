@@ -121,10 +121,14 @@ class PlayerController @Inject constructor(
                 artworkUrl = artworkUrl,
                 playbackSpeed = speed,
             )
+            // Must be set before setMediaItem/prepare(), not decided afterwards via a conditional
+            // play() call - the controller may still have playWhenReady=true left over from
+            // whatever was playing before (this is an app-wide singleton session), in which case
+            // loading a new item would auto-start it regardless of autoPlay.
+            mediaController.playWhenReady = autoPlay
             mediaController.setMediaItem(mediaItem)
             mediaController.prepare()
             mediaController.setPlaybackSpeed(speed)
-            if (autoPlay) mediaController.play()
         }
     }
 

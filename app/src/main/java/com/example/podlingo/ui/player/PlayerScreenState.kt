@@ -26,8 +26,8 @@ sealed interface PlayerScreenState {
         val sentences: List<SentenceEntity> = emptyList(),
         val words: List<WordTiming> = emptyList(),
         val transcriptVisible: Boolean = false,
-        /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.hardWordModeEnabled]. */
-        val hardWordModeEnabled: Boolean = false,
+        /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.hardWordModeTriggerEnabled] - the trigger flavor only; there's no Player-screen control for either flavor any more, both live in Settings, but the trigger overlay logic below still needs to react to it. */
+        val hardWordModeTriggerEnabled: Boolean = false,
         /** The sentence currently being read aloud by a trigger (translation overlay), if any. */
         val activeSentenceId: String? = null,
         /** Hard-word mode's specific target word within [activeSentenceId], if that's the active trigger. */
@@ -40,16 +40,16 @@ sealed interface PlayerScreenState {
         val sentenceTranslations: Map<String, String> = emptyMap(),
         /** Sentence ids with a translation fetch in flight, so [PlayerViewModel.ensureSentenceTranslation] never fires the same request twice. */
         val translatingSentenceIds: Set<String> = emptySet(),
-        /** Non-null while the "which of these words do you know" panel is open for this episode. */
-        val vocabCalibration: VocabCalibrationState? = null,
         /** A transient inline translation shown while an unknown word plays - see [PlayerViewModel]. */
         val translationPopup: WordTranslationPopup? = null,
         /** True while the "review words you didn't know?" Yes/No prompt is showing after the episode ends. */
         val quizPrompt: Boolean = false,
-        /** Non-null while the end-of-episode vocabulary quiz, or the pre-episode start quiz, is active - see [VocabQuizState.autoAdvance] to tell which. */
+        /** Non-null while the end-of-episode vocabulary quiz (offered after [quizPrompt]) is active. */
         val quiz: VocabQuizState? = null,
-        /** True while the "quiz yourself before you start?" Yes/No prompt is showing - only ever offered once per episode, on a genuinely fresh start (see [PlayerViewModel.startPlayback]). */
-        val startQuizPrompt: Boolean = false,
+        /** Non-null while the pre-episode "Word Check" assessment is open - see [PlayerViewModel.beginWordCheck]. Opens directly (no Yes/No gate) on a genuinely fresh start once there's anything left to assess. */
+        val wordCheck: WordCheckState? = null,
+        /** True while a Word Check tier is being built (translations fetched, questions assembled) but isn't ready to show yet - a large first tier can take a few seconds, and without this the screen would otherwise look frozen (no audio playing, no dialog yet). */
+        val wordCheckLoading: Boolean = false,
     ) : PlayerScreenState
 
     data class Failed(val message: String, val episodeTitle: String? = null) : PlayerScreenState

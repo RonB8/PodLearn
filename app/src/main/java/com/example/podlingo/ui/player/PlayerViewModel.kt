@@ -85,10 +85,6 @@ class PlayerViewModel @Inject constructor(
     private var anchorFullSentenceId: String? = null
     private var lastShownFullSentenceId: String? = null
 
-    // Vocab calibration: this episode's words grouped by CEFR rank (5=hardest..0=A1), computed
-    // once per calibration pass so onCalibrationContinue can cascade to the next tier down.
-    private var pendingDifficultyTiers: Map<Int, List<WordTiming>> = emptyMap()
-
     // Silent in-playback translation popup: this episode's unknown-word occurrences (first
     // occurrence per unique word, sorted by start time) and which of them have already fired this
     // playthrough, so rewinding/replaying doesn't re-pop the same word.
@@ -103,10 +99,15 @@ class PlayerViewModel @Inject constructor(
     // End-of-episode quiz: the display-form words awaiting quiz-building once the user says yes.
     private var pendingQuizWords: List<String> = emptyList()
 
-    // Pre-episode start quiz: this episode's still-unknown words grouped by CEFR tier (hardest
-    // first), computed once at playback start so onStartQuizPromptAnswer/advanceQuiz can build
-    // each tier's questions on demand as the quiz cascades into easier ones.
-    private var pendingStartQuizTiers: List<List<String>> = emptyList()
+    // Pre-episode Word Check: true once anything has been explicitly skipped (Quiz tab) during the
+    // current Word Check session - see finishWordCheck. Reset at the start of each session so a
+    // fully-resolved pass (no skips) is the only kind that ever marks the episode complete.
+    private var wordCheckHasUnresolved = false
+
+    // The tier currently being built (translations fetched, questions assembled) - cancelled
+    // before starting a new one so a stray duplicate build (see beginWordCheck) can never race the
+    // one actually meant to show.
+    private var wordCheckBuildJob: Job? = null
 
     init {
         viewModelScope.launch { loadEpisode() }
@@ -135,7 +136,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             uiState.collect { state ->
                 val overlayActive = state is PlayerScreenState.Ready &&
-                    !state.hardWordModeEnabled &&
+                    !state.hardWordModeTriggerEnabled &&
                     (state.isTranslating || state.resolvedSentenceText != null)
                 playerController.setTranslationOverlayActive(overlayActive)
             }
@@ -157,9 +158,9 @@ class PlayerViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            settingsRepository.hardWordModeEnabled.collect { enabled ->
+            settingsRepository.hardWordModeTriggerEnabled.collect { enabled ->
                 _uiState.update { current ->
-                    if (current is PlayerScreenState.Ready) current.copy(hardWordModeEnabled = enabled) else current
+                    if (current is PlayerScreenState.Ready) current.copy(hardWordModeTriggerEnabled = enabled) else current
                 }
             }
         }
@@ -192,7 +193,15 @@ class PlayerViewModel @Inject constructor(
      */
     private fun resumeIfNotQuizzing() {
         val state = _uiState.value
-        if (state is PlayerScreenState.Ready && (state.quizPrompt || state.quiz != null || state.startQuizPrompt)) return
+        if (state is PlayerScreenState.Ready && (state.quizPrompt || state.quiz != null || state.wordCheck != null)) return
+        // Must happen synchronously, right here, rather than left to the uiState collector in
+        // init that normally drives this flag - that collector reacts on its own coroutine, so it
+        // can still be running behind the state change (resolvedSentenceText/isTranslating already
+        // cleared) that led to this resume() call. A resume reaching PlaybackService while this
+        // flag is still stale-true gets misread as "show the previous sentence" instead of an
+        // actual resume (see TriggerEventBus.translationOverlayActive), which is exactly what
+        // happened when auto-translate's own end-of-narration resume raced that collector.
+        playerController.setTranslationOverlayActive(false)
         playerController.resume()
     }
 
@@ -227,10 +236,6 @@ class PlayerViewModel @Inject constructor(
             if (current !is PlayerScreenState.Ready) return@update current
             current.copy(transcriptVisible = !current.transcriptVisible)
         }
-    }
-
-    fun toggleHardWordMode() {
-        settingsRepository.setHardWordModeEnabled(!settingsRepository.hardWordModeEnabled.value)
     }
 
     fun toggleShowSentenceTranslations() {
@@ -268,68 +273,21 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Turning on starts (or resumes) calibrating this episode's hardest words against the user's
-     * vocabulary profile - see [startVocabCalibration]. Turning off cancels immediately, closing
-     * any calibration panel that happened to be open.
+     * Turning on opens (or resumes) the pre-episode "Word Check" assessment for this episode if
+     * it hasn't been fully resolved yet - see [maybeOpenWordCheck]. Turning off cancels
+     * immediately, closing any Word Check dialog that happened to be open.
      */
     fun toggleAutoTranslate() {
         val turningOn = !settingsRepository.autoTranslateEnabled.value
         settingsRepository.setAutoTranslateEnabled(turningOn)
         _uiState.update { current ->
             if (current !is PlayerScreenState.Ready) return@update current
-            current.copy(autoTranslateEnabled = turningOn, vocabCalibration = if (turningOn) current.vocabCalibration else null)
+            current.copy(autoTranslateEnabled = turningOn, wordCheck = if (turningOn) current.wordCheck else null)
         }
         if (turningOn) {
-            viewModelScope.launch { startVocabCalibration() }
+            viewModelScope.launch { maybeOpenWordCheck() }
         } else {
             unknownWordOccurrences = emptyList()
-        }
-    }
-
-    fun onCalibrationWordToggled(word: String) {
-        _uiState.update { current ->
-            if (current !is PlayerScreenState.Ready) return@update current
-            val calibration = current.vocabCalibration ?: return@update current
-            val selected = if (word in calibration.selected) calibration.selected - word else calibration.selected + word
-            current.copy(vocabCalibration = calibration.copy(selected = selected))
-        }
-    }
-
-    /** Toggles between selecting every word in this tier and clearing the selection - handy when most of the tier is unfamiliar, so the user can select all and then tap off the few they do know. */
-    fun onCalibrationSelectAllToggled() {
-        _uiState.update { current ->
-            if (current !is PlayerScreenState.Ready) return@update current
-            val calibration = current.vocabCalibration ?: return@update current
-            val allSelected = calibration.selected.size == calibration.words.size
-            val selected = if (allSelected) emptySet() else calibration.words.toSet()
-            current.copy(vocabCalibration = calibration.copy(selected = selected))
-        }
-    }
-
-    /** Closes the calibration panel without deciding anything - unlike [onCalibrationContinue], no word's status changes, so the same tier can still be offered again later instead of every word in it silently ending up "known". Still refreshes the in-playback popup list, a plain read of whatever's already decided from past sessions - skipping it would leave that feature dark for the rest of this playthrough over a dialog the user explicitly declined to answer. */
-    fun onCalibrationDismissed() {
-        _uiState.update { current ->
-            if (current is PlayerScreenState.Ready) current.copy(vocabCalibration = null) else current
-        }
-        viewModelScope.launch { refreshUnknownWordOccurrences() }
-    }
-
-    fun onCalibrationContinue() {
-        val calibration = (_uiState.value as? PlayerScreenState.Ready)?.vocabCalibration ?: return
-        viewModelScope.launch {
-            for (word in calibration.words) {
-                if (word in calibration.selected) wordKnowledgeRepository.markUnknown(word) else wordKnowledgeRepository.markKnown(word)
-            }
-            val selectionRate = calibration.selected.size.toDouble() / calibration.words.size
-            val nextTierRank = pendingDifficultyTiers.keys.filter { it < calibration.tierRank }.maxOrNull()
-            if (selectionRate >= AppDefaults.CALIBRATION_CASCADE_THRESHOLD && nextTierRank != null) {
-                val nextTierWords = undecidedWordsInTier(nextTierRank)
-                if (nextTierWords.isNotEmpty()) {
-                    openCalibrationTier(nextTierRank, nextTierWords)
-                    return@launch
-                }
-            }
-            finishCalibration()
         }
     }
 
@@ -373,88 +331,31 @@ class PlayerViewModel @Inject constructor(
                     quiz = latestQuiz.copy(
                         answeredThisQuestion = answer,
                         correctCount = latestQuiz.correctCount + if (isCorrect) 1 else 0,
-                        currentTierWrongCount = latestQuiz.currentTierWrongCount + if (isCorrect) 0 else 1,
-                        currentTierTotal = latestQuiz.currentTierTotal + 1,
                     ),
                 )
             }
-            // Only the start quiz sets this - the end-of-episode quiz still waits for an explicit
-            // "Next" tap (see VocabQuizDialog).
-            if (quiz.autoAdvance) {
-                delay(AppDefaults.START_QUIZ_AUTO_ADVANCE_DELAY_MS)
-                advanceQuiz()
-            }
         }
     }
 
+    /** Shared by the manual "Next" tap and "Skip" (see VocabQuizDialog) - Skip just calls this before an answer was ever recorded. */
     fun onQuizNext() {
-        viewModelScope.launch { advanceQuiz() }
-    }
-
-    /**
-     * Shared by the manual "Next" tap and the start quiz's auto-advance. For a plain (non-tiered)
-     * quiz this only ever steps forward or finishes, same as before - [VocabQuizState.remainingTiers]
-     * is empty so the cascade branch below never triggers. For the start quiz, reaching what would
-     * be the last question first checks whether this tier's wrong rate cleared the cascade bar; if
-     * so it pulls in the next tier's questions (skipping any that yield none) instead of finishing.
-     */
-    private suspend fun advanceQuiz() {
-        val quiz = (_uiState.value as? PlayerScreenState.Ready)?.quiz ?: return
-        val nextIndex = quiz.currentIndex + 1
-        if (nextIndex < quiz.questions.size) {
-            _uiState.update { current ->
-                if (current !is PlayerScreenState.Ready) return@update current
-                val q = current.quiz ?: return@update current
-                current.copy(quiz = q.copy(currentIndex = nextIndex, answeredThisQuestion = null))
-            }
-            return
-        }
-        val wrongRate = if (quiz.currentTierTotal > 0) quiz.currentTierWrongCount.toDouble() / quiz.currentTierTotal else 0.0
-        if (wrongRate > AppDefaults.START_QUIZ_TIER_CASCADE_WRONG_THRESHOLD) {
-            var remaining = quiz.remainingTiers
-            while (remaining.isNotEmpty()) {
-                val nextTierWords = remaining.first()
-                remaining = remaining.drop(1)
-                val nextQuestions = vocabQuizBuilder.buildQuizQuestions(nextTierWords)
-                if (nextQuestions.isNotEmpty()) {
-                    _uiState.update { current ->
-                        if (current !is PlayerScreenState.Ready) return@update current
-                        val q = current.quiz ?: return@update current
-                        current.copy(
-                            quiz = q.copy(
-                                questions = q.questions + nextQuestions,
-                                currentIndex = nextIndex,
-                                answeredThisQuestion = null,
-                                currentTierWrongCount = 0,
-                                currentTierTotal = 0,
-                                remainingTiers = remaining,
-                            ),
-                        )
-                    }
-                    return
-                }
-            }
-        }
         _uiState.update { current ->
             if (current !is PlayerScreenState.Ready) return@update current
             val q = current.quiz ?: return@update current
-            current.copy(quiz = q.copy(finished = true))
+            val nextIndex = q.currentIndex + 1
+            current.copy(
+                quiz = if (nextIndex >= q.questions.size) {
+                    q.copy(finished = true)
+                } else {
+                    q.copy(currentIndex = nextIndex, answeredThisQuestion = null)
+                },
+            )
         }
     }
 
     fun onQuizDismissed() {
-        val quiz = (_uiState.value as? PlayerScreenState.Ready)?.quiz
         _uiState.update { current -> if (current is PlayerScreenState.Ready) current.copy(quiz = null) else current }
-        if (quiz?.autoAdvance == true) {
-            // Only a completed start quiz counts as "done" - bailing out early (the X button, mid-
-            // quiz) leaves it eligible to be offered again on the next fresh start of this episode.
-            if (quiz.finished) {
-                viewModelScope.launch { podcastRepository.markStartQuizCompleted(episodeId) }
-            }
-            playerController.play()
-        } else {
-            advanceToNextEpisodeIfEnabled()
-        }
+        advanceToNextEpisodeIfEnabled()
     }
 
     fun seekTo(positionMs: Long) {
@@ -533,21 +434,21 @@ class PlayerViewModel @Inject constructor(
         }
         // Must be checked before prepare() - prepare() itself no-ops (and leaves whatever was
         // already playing alone) when this episode is already the loaded one, which is exactly
-        // the "not a fresh start" case the start quiz should never re-offer mid-playthrough.
+        // the "not a fresh start" case Word Check should never re-offer mid-playthrough.
         val isFreshStart = playerController.playerState.value.episodeId != episode.id
         val words = transcriptRepository.getWordTimings(episode.id).also { cachedWords = it }
-        val startQuizTiers = if (isFreshStart && !episode.startQuizCompleted) {
-            computeUnknownWordTiers(words)
+        val autoTranslateOn = settingsRepository.autoTranslateEnabled.value
+        val wordCheckTiers = if (isFreshStart && autoTranslateOn && !episode.startQuizCompleted) {
+            computeOutstandingWordTiers(words)
         } else {
             emptyList()
         }
-        val promptStartQuiz = startQuizTiers.isNotEmpty()
-        pendingStartQuizTiers = startQuizTiers
+        val openWordCheck = wordCheckTiers.isNotEmpty()
 
         val artworkUrl = podcastRepository.getPodcast(episode.podcastId)?.imageUrl
-        // autoPlay=false when the start-quiz prompt is about to show - otherwise the episode would
-        // audibly start for a moment before the prompt/pause below catches up to it.
-        playerController.prepare(episode.id, episode.title, artworkUrl, localFilePath, autoPlay = !promptStartQuiz)
+        // autoPlay=false when Word Check is about to open - otherwise the episode would audibly
+        // start for a moment before the dialog catches up to it.
+        playerController.prepare(episode.id, episode.title, artworkUrl, localFilePath, autoPlay = !openWordCheck)
         val podcastEpisodes = podcastRepository.getEpisodes(episode.podcastId).first()
         val currentIndex = podcastEpisodes.indexOfFirst { it.id == episode.id }
         nextEpisodeId = if (currentIndex == -1) null else podcastEpisodes.getOrNull(currentIndex + 1)?.id
@@ -560,27 +461,19 @@ class PlayerViewModel @Inject constructor(
             hasNextEpisode = nextEpisodeId != null,
             sentences = sentences,
             words = words,
-            hardWordModeEnabled = settingsRepository.hardWordModeEnabled.value,
-            autoTranslateEnabled = settingsRepository.autoTranslateEnabled.value,
+            hardWordModeTriggerEnabled = settingsRepository.hardWordModeTriggerEnabled.value,
+            autoTranslateEnabled = autoTranslateOn,
             showSentenceTranslationsEnabled = settingsRepository.showSentenceTranslationsEnabled.value,
-            startQuizPrompt = promptStartQuiz,
+            wordCheckLoading = openWordCheck,
         )
         podcastRepository.recordEpisodePlayed(episode.id)
-        // A fresh episode brings its own hardest words - if auto-translate is already on and this
-        // episode hasn't been calibrated before, offer it once. Without the vocabCalibrated guard
-        // this would re-prompt every time the player screen is recreated for the same episode
-        // (e.g. swipe-down-dismiss then reopening it), even after the user already went through
-        // calibration and is just listening - re-running this on the same episode is now only
-        // available via an explicit "Auto translate" chip tap (see toggleAutoTranslate).
-        if (settingsRepository.autoTranslateEnabled.value) {
-            if (!episode.vocabCalibrated) {
-                startVocabCalibration()
-            } else {
-                // Already calibrated in an earlier session - unknownWordOccurrences is per-instance
-                // state (this is a fresh ViewModel), so it needs repopulating here or the popup/
-                // read-aloud would silently never fire again on this episode.
-                refreshUnknownWordOccurrences()
-            }
+        if (openWordCheck) {
+            beginWordCheck(wordCheckTiers)
+        } else if (autoTranslateOn) {
+            // Nothing left to assess (or not a fresh start) - unknownWordOccurrences is per-instance
+            // state (this is a fresh ViewModel), so it needs repopulating here or the popup/
+            // read-aloud would silently never fire again on this episode.
+            refreshUnknownWordOccurrences()
         }
     }
 
@@ -622,7 +515,7 @@ class PlayerViewModel @Inject constructor(
                         resumeIfNotQuizzing()
                         return@launch
                     }
-                    if (settingsRepository.hardWordModeEnabled.value) {
+                    if (settingsRepository.hardWordModeTriggerEnabled.value) {
                         handleHardWordTrigger(resolution.sentenceId, sentence.fullText, words, effectiveTimeMs)
                     } else {
                         // Leaving hard-word mode's per-sentence progression - restart clean if
@@ -882,87 +775,211 @@ class PlayerViewModel @Inject constructor(
         return ranked.groupBy { wordDifficultyRepository.rankOf(it.word) }
     }
 
-    /** Opens the calibration panel on the hardest tier with anything left to ask about, or just refreshes popup tracking if every tier is already decided. */
-    private suspend fun startVocabCalibration() {
-        // Offering it now (whether a panel actually opens or there's nothing new to ask) is what
-        // startPlayback's auto-trigger checks - it should only ever happen once per episode
-        // automatically; a later manual "Auto translate" chip tap can still re-invoke this.
-        podcastRepository.markEpisodeVocabCalibrated(episodeId)
-        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
-        pendingDifficultyTiers = computeDifficultyTiers(words)
-        for (rank in pendingDifficultyTiers.keys.sortedDescending()) {
-            val undecided = undecidedWordsInTier(rank)
-            if (undecided.isNotEmpty()) {
-                openCalibrationTier(rank, undecided)
-                return
-            }
-        }
-        refreshUnknownWordOccurrences()
-    }
+    // --- Vocabulary trainer: pre-episode Word Check -----------------------------------------
 
-    /** This tier's words minus any that already have a known/unknown row - never re-ask about a decided word. */
-    private suspend fun undecidedWordsInTier(rank: Int): List<String> {
-        val tierWords = pendingDifficultyTiers[rank].orEmpty()
-        if (tierWords.isEmpty()) return emptyList()
-        val statuses = wordKnowledgeRepository.getStatuses(tierWords.map { it.word })
-        return tierWords.filter { WordNormalizer.normalize(it.word) !in statuses }.map { it.word }
-    }
-
-    private fun openCalibrationTier(rank: Int, words: List<String>) {
-        _uiState.update { current ->
-            if (current !is PlayerScreenState.Ready) return@update current
-            current.copy(vocabCalibration = VocabCalibrationState(tierRank = rank, words = words))
-        }
-    }
-
-    private suspend fun finishCalibration() {
-        _uiState.update { current ->
-            if (current is PlayerScreenState.Ready) current.copy(vocabCalibration = null) else current
-        }
-        refreshUnknownWordOccurrences()
-    }
-
-    // --- Vocabulary trainer: pre-episode start quiz -----------------------------------------
-
-    /** This episode's still-unknown words only, grouped the same way as calibration (hardest tier first) - empty tiers are dropped, so an empty overall result means nothing to quiz on. */
-    private suspend fun computeUnknownWordTiers(words: List<WordTiming>): List<List<String>> {
+    /**
+     * This episode's still-outstanding words - anything without a KNOWN row, whether previously
+     * flagged UNKNOWN or never decided at all - grouped hardest-tier-first the same way as
+     * [computeDifficultyTiers]. Empty tiers are dropped, so an empty overall result means nothing
+     * left to assess.
+     */
+    private suspend fun computeOutstandingWordTiers(words: List<WordTiming>): List<List<String>> {
         val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
         val statuses = wordKnowledgeRepository.getStatuses(deduped.map { it.word })
-        val unknown = deduped.filter { statuses[WordNormalizer.normalize(it.word)]?.status == WordKnowledgeStatus.UNKNOWN }
-        if (unknown.isEmpty()) return emptyList()
-        val tiers = computeDifficultyTiers(unknown)
+        val outstanding = deduped.filter { statuses[WordNormalizer.normalize(it.word)]?.status != WordKnowledgeStatus.KNOWN }
+        if (outstanding.isEmpty()) return emptyList()
+        val tiers = computeDifficultyTiers(outstanding)
         return tiers.keys.sortedDescending().map { rank -> tiers.getValue(rank).map { it.word } }
     }
 
-    fun onStartQuizPromptAnswer(startQuiz: Boolean) {
-        _uiState.update { current ->
-            if (current is PlayerScreenState.Ready) current.copy(startQuizPrompt = false) else current
-        }
-        if (!startQuiz) {
-            playerController.play()
+    /** Opens Word Check on this episode's hardest outstanding tier if there's anything left to assess, or just refreshes popup tracking otherwise - shared by [startPlayback]'s fresh-start check and a manual "Auto translate" chip tap. */
+    private suspend fun maybeOpenWordCheck() {
+        if ((_uiState.value as? PlayerScreenState.Ready)?.wordCheck != null) return
+        val episode = podcastRepository.getEpisode(episodeId)
+        if (episode?.startQuizCompleted == true) {
+            refreshUnknownWordOccurrences()
             return
         }
-        viewModelScope.launch { beginStartQuiz() }
+        val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
+        val tiers = computeOutstandingWordTiers(words)
+        if (tiers.isEmpty()) refreshUnknownWordOccurrences() else beginWordCheck(tiers)
     }
 
-    /** Builds the hardest remaining tier's questions and opens the quiz on them, skipping past any tier that yields none (e.g. not enough real wrong-answer options exist yet) - if every tier comes up empty, there's nothing to quiz on, so just start playing. */
-    private suspend fun beginStartQuiz() {
-        var tiers = pendingStartQuizTiers
-        while (tiers.isNotEmpty()) {
-            val tierWords = tiers.first()
-            val remaining = tiers.drop(1)
-            val questions = vocabQuizBuilder.buildQuizQuestions(tierWords)
-            if (questions.isNotEmpty()) {
-                _uiState.update { current ->
-                    if (current !is PlayerScreenState.Ready) return@update current
-                    current.copy(
-                        quiz = VocabQuizState(questions = questions, autoAdvance = true, remainingTiers = remaining),
-                    )
-                }
-                return
-            }
-            tiers = remaining
+    /**
+     * Starts a fresh Word Check session on [tiers] - resets the per-session "was anything left
+     * undecided" tracking used by [finishWordCheck] to decide whether this episode counts as fully
+     * done. Cancels any build already in flight first: [startPlayback] can in principle run more
+     * than once for the same fresh load (the download-progress flow re-emitting), and without this
+     * a second build would silently race the first one instead of superseding it.
+     */
+    private fun beginWordCheck(tiers: List<List<String>>) {
+        wordCheckHasUnresolved = false
+        wordCheckBuildJob?.cancel()
+        wordCheckBuildJob = viewModelScope.launch { openWordCheckTier(tiers) }
+    }
+
+    /**
+     * Builds the given tiers' hardest one's quiz questions and opens Word Check on it - defaults
+     * to the Simple tab when the tier has no buildable question (e.g. not enough real distractors
+     * exist yet), so there's always something the user can act on. Sets [WordCheckState] loading
+     * while this runs (see [PlayerScreenState.Ready.wordCheckLoading]) - a tier full of never-seen
+     * words needs a live translation lookup per word (batched, but still real network time), and
+     * without a loading state the screen would otherwise look frozen: no audio playing yet, no
+     * dialog on screen either.
+     */
+    private suspend fun openWordCheckTier(tiers: List<List<String>>) {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(wordCheckLoading = true)
         }
+        val tierWords = tiers.first()
+        val remaining = tiers.drop(1)
+        val questions = vocabQuizBuilder.buildQuizQuestions(tierWords)
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(
+                wordCheckLoading = false,
+                wordCheck = WordCheckState(
+                    tab = if (questions.isNotEmpty()) WordCheckTab.QUIZ else WordCheckTab.SIMPLE,
+                    words = tierWords,
+                    questions = questions,
+                    remainingTiers = remaining,
+                ),
+            )
+        }
+    }
+
+    fun onWordCheckTabSelected(tab: WordCheckTab) {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val wc = current.wordCheck ?: return@update current
+            current.copy(wordCheck = wc.copy(tab = tab))
+        }
+    }
+
+    fun onWordCheckAnswerSelected(answer: String) {
+        val wc = (_uiState.value as? PlayerScreenState.Ready)?.wordCheck ?: return
+        if (wc.answeredThisQuestion != null) return
+        val question = wc.questions.getOrNull(wc.currentIndex) ?: return
+        val isCorrect = answer == question.correctAnswer
+        viewModelScope.launch {
+            if (isCorrect) wordKnowledgeRepository.markKnown(question.word) else wordKnowledgeRepository.markUnknown(question.word)
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                val latest = current.wordCheck ?: return@update current
+                current.copy(
+                    wordCheck = latest.copy(
+                        answeredThisQuestion = answer,
+                        quizCorrectWords = if (isCorrect) latest.quizCorrectWords + question.word else latest.quizCorrectWords,
+                        // Pre-select it in the Simple tab, same as if the user had tapped it there -
+                        // still freely editable from that tab afterwards.
+                        tapSelected = if (isCorrect) latest.tapSelected else latest.tapSelected + question.word,
+                    ),
+                )
+            }
+            delay(AppDefaults.START_QUIZ_AUTO_ADVANCE_DELAY_MS)
+            advanceWordCheckQuestion()
+        }
+    }
+
+    /** Leaves the word's status untouched - see [WordCheckState.skipped] - and moves on, same as a normal advance. */
+    fun onWordCheckSkip() {
+        val wc = (_uiState.value as? PlayerScreenState.Ready)?.wordCheck ?: return
+        if (wc.answeredThisQuestion != null) return
+        val question = wc.questions.getOrNull(wc.currentIndex) ?: return
+        wordCheckHasUnresolved = true
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val latest = current.wordCheck ?: return@update current
+            current.copy(wordCheck = latest.copy(skipped = latest.skipped + question.word))
+        }
+        advanceWordCheckQuestion()
+    }
+
+    /** Steps to the next question, or - once the tier's questions run out - switches to the Simple tab so the user finalizes the tier (and any words that never got a question) with Continue. */
+    private fun advanceWordCheckQuestion() {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val wc = current.wordCheck ?: return@update current
+            val nextIndex = wc.currentIndex + 1
+            current.copy(
+                wordCheck = if (nextIndex < wc.questions.size) {
+                    wc.copy(currentIndex = nextIndex, answeredThisQuestion = null)
+                } else {
+                    wc.copy(tab = WordCheckTab.SIMPLE)
+                },
+            )
+        }
+    }
+
+    /** Toggles the Simple tab's "I don't know this" selection - a no-op for a word already resolved correctly via the Quiz tab. Clears [WordCheckState.skipped] for it, so tapping a skipped word always brings it back into the normal decide-via-Continue pool. */
+    fun onWordCheckWordToggled(word: String) {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val wc = current.wordCheck ?: return@update current
+            if (word in wc.quizCorrectWords) return@update current
+            val selected = if (word in wc.tapSelected) wc.tapSelected - word else wc.tapSelected + word
+            current.copy(wordCheck = wc.copy(tapSelected = selected, skipped = wc.skipped - word))
+        }
+    }
+
+    /** Toggles between selecting every still-undecided word in this tier and clearing the selection - handy when most of the tier is unfamiliar. Also clears [WordCheckState.skipped], same bulk-override reasoning. */
+    fun onWordCheckSelectAllToggled() {
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            val wc = current.wordCheck ?: return@update current
+            val toggleable = (wc.words - wc.quizCorrectWords).toSet()
+            val allSelected = toggleable.isNotEmpty() && wc.tapSelected.containsAll(toggleable)
+            current.copy(wordCheck = wc.copy(tapSelected = if (allSelected) emptySet() else toggleable, skipped = emptySet()))
+        }
+    }
+
+    /**
+     * Finalizes this tier: every word gets a known/unknown status except ones explicitly skipped
+     * in the Quiz tab (those are left alone so they resurface on a future Word Check instead of
+     * silently ending up "known" - see [WordCheckState.skipped]). Marking at least
+     * [AppDefaults.CALIBRATION_CASCADE_THRESHOLD] of this tier's decided words "don't know" pulls
+     * in the next-easier tier, same as calibration always did - otherwise Word Check finishes here
+     * even though easier tiers may still have outstanding words (they simply won't come up again
+     * until something else - the in-playback popup, or another Word Check pass reaching them via
+     * a worse showing on a harder tier - touches them).
+     */
+    fun onWordCheckContinue() {
+        val wc = (_uiState.value as? PlayerScreenState.Ready)?.wordCheck ?: return
+        viewModelScope.launch {
+            for (word in wc.words) {
+                if (word in wc.quizCorrectWords || word in wc.skipped) continue
+                if (word in wc.tapSelected) wordKnowledgeRepository.markUnknown(word) else wordKnowledgeRepository.markKnown(word)
+            }
+            if (wc.skipped.isNotEmpty()) wordCheckHasUnresolved = true
+            val decidedCount = wc.words.size - wc.skipped.size
+            val notKnownRate = if (decidedCount > 0) wc.tapSelected.size.toDouble() / decidedCount else 0.0
+            if (notKnownRate >= AppDefaults.CALIBRATION_CASCADE_THRESHOLD && wc.remainingTiers.isNotEmpty()) {
+                openWordCheckTier(wc.remainingTiers)
+            } else {
+                finishWordCheck()
+            }
+        }
+    }
+
+    /** Only a pass with nothing left unresolved (no skips, anywhere across the session) counts as "done" - marking the episode complete on a partial pass would silently drop the rest instead of offering it again next time. */
+    private suspend fun finishWordCheck() {
+        if (!wordCheckHasUnresolved) podcastRepository.markStartQuizCompleted(episodeId)
+        _uiState.update { current -> if (current is PlayerScreenState.Ready) current.copy(wordCheck = null) else current }
+        refreshUnknownWordOccurrences()
+        playerController.play()
+    }
+
+    /** Closes Word Check without deciding anything left in the current tier - the episode is never marked complete this way, so the same tier (minus whatever was already answered/committed) is offered again on the next fresh start. */
+    fun onWordCheckDismissed() {
+        // Also covers dismissing the loading state before a tier finishes building - without
+        // cancelling the job here, it would complete moments later and reopen the dialog right
+        // out from under a user who just closed it.
+        wordCheckBuildJob?.cancel()
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(wordCheck = null, wordCheckLoading = false) else current
+        }
+        viewModelScope.launch { refreshUnknownWordOccurrences() }
         playerController.play()
     }
 
@@ -996,7 +1013,7 @@ class PlayerViewModel @Inject constructor(
         val effectiveTimeMs = positionMs - AppDefaults.REACTION_DELAY_MS
         val currentSentenceId = current.sentences.lastOrNull { it.startMs <= effectiveTimeMs }?.id ?: return
         val readAloud = settingsRepository.autoTranslateReadAloudEnabled.value
-        val sentenceMode = readAloud && !settingsRepository.hardWordModeEnabled.value
+        val sentenceMode = readAloud && !settingsRepository.hardWordModeAutoTranslateEnabled.value
         // Sentence mode reads the whole sentence for whichever unknown word triggers it first - a
         // second (or third) unknown word later in that same sentence must not re-trigger it.
         if (sentenceMode && currentSentenceId in spokenSentenceIdsForReadAloud) return
@@ -1033,7 +1050,7 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { current ->
             if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
         }
-        if (settingsRepository.hardWordModeEnabled.value) {
+        if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
             val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
             _uiState.update { current ->
                 if (current !is PlayerScreenState.Ready) return@update current

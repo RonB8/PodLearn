@@ -53,10 +53,6 @@ class FakeEpisodeDao : EpisodeDao {
         episodes.update { list -> list.map { if (it.id == id) it.copy(lastPlayedEpochMs = null) else it } }
     }
 
-    override suspend fun markVocabCalibrated(id: String) {
-        episodes.update { list -> list.map { if (it.id == id) it.copy(vocabCalibrated = true) else it } }
-    }
-
     override suspend fun markStartQuizCompleted(id: String) {
         episodes.update { list -> list.map { if (it.id == id) it.copy(startQuizCompleted = true) else it } }
     }

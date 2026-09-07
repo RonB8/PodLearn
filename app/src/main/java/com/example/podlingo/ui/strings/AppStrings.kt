@@ -42,14 +42,16 @@ interface AppStrings {
     val languageLabel: String
     val languageEnglish: String
     val languageHebrew: String
-    val hardWordModeTitle: String
-    val hardWordModeDescription: String
+    val hardWordModeTriggerTitle: String
+    val hardWordModeTriggerDescription: String
     val autoFullSentenceTitle: String
     fun autoFullSentenceDescription(hardWordCount: Int): String
     val autoPlayNextTitle: String
     val autoPlayNextDescription: String
     val autoTranslateReadAloudTitle: String
     val autoTranslateReadAloudDescription: String
+    val hardWordModeAutoTranslateTitle: String
+    val hardWordModeAutoTranslateDescription: String
     val unknownWordsTitle: String
     val unknownWordsDescription: String
     fun aboutContentDescription(settingTitle: String): String
@@ -138,7 +140,6 @@ interface AppStrings {
     /** Trailing text on the app-wide downloading banner when more than one episode is downloading, e.g. "+2 more". */
     fun moreDownloadsSuffix(count: Int): String
     val transcriptChip: String
-    val hardWordChip: String
     val autoTranslateChip: String
     val showTranslationsChip: String
     val noRelevantSentenceMessage: String
@@ -149,8 +150,9 @@ interface AppStrings {
     val continueLabel: String
     val reviewWhatYouLearnedTitle: String
     val wantToTryQuizText: String
-    val startQuizPromptTitle: String
-    val startQuizPromptText: String
+    val wordCheckTitle: String
+    val wordCheckQuizTab: String
+    val wordCheckSimpleTab: String
     val yes: String
     val no: String
     val quizCompleteTitle: String
@@ -158,6 +160,7 @@ interface AppStrings {
     fun questionXOfY(index: Int, total: Int): String
     val seeResults: String
     val next: String
+    val skip: String
     fun skipForwardSecondsContentDescription(seconds: Long): String
     fun skipBackSecondsContentDescription(seconds: Long): String
     val nextEpisodeContentDescription: String
@@ -193,19 +196,23 @@ object EnglishStrings : AppStrings {
     override val languageLabel = "Language"
     override val languageEnglish = "English"
     override val languageHebrew = "Hebrew"
-    override val hardWordModeTitle = "Translate hardest word only"
-    override val hardWordModeDescription = "On trigger, translate just the hardest word in the sentence " +
+    override val hardWordModeTriggerTitle = "Translate hardest word only (trigger)"
+    override val hardWordModeTriggerDescription = "On trigger, translate just the hardest word in the sentence " +
         "(by Oxford CEFR level). Trigger again right away on the same sentence to reveal the next-hardest word."
     override val autoFullSentenceTitle = "Auto full-sentence for hard sentences"
     override fun autoFullSentenceDescription(hardWordCount: Int) =
-        "Within hard-word mode: if a sentence has $hardWordCount or more hard words, translate the whole " +
-            "sentence instead of one word at a time."
+        "Within the trigger's hard-word mode: if a sentence has $hardWordCount or more hard words, translate " +
+            "the whole sentence instead of one word at a time."
     override val autoPlayNextTitle = "Auto-play next episode"
     override val autoPlayNextDescription = "When an episode finishes, automatically start the next one in the podcast."
     override val autoTranslateReadAloudTitle = "Read auto-translated words aloud"
     override val autoTranslateReadAloudDescription = "When Auto translate finds a word you don't know, pause and " +
-        "read it aloud like the manual trigger does - just the word if hard-word mode is on, or the whole " +
-        "sentence otherwise."
+        "read it aloud like the manual trigger does - just the word or the whole sentence, depending on the " +
+        "setting below."
+    override val hardWordModeAutoTranslateTitle = "Translate hardest word only (auto translate)"
+    override val hardWordModeAutoTranslateDescription = "When Auto translate reads a sentence aloud, read just " +
+        "the flagged unknown word instead of the whole sentence it's in. Independent of the trigger's own " +
+        "hard-word setting above."
     override val unknownWordsTitle = "Words you don't know"
     override val unknownWordsDescription = "View and edit the words flagged for auto-translation."
     override fun aboutContentDescription(settingTitle: String) = "About $settingTitle"
@@ -291,7 +298,6 @@ object EnglishStrings : AppStrings {
     override val buildingTranscript = "Building transcript..."
     override fun moreDownloadsSuffix(count: Int) = "+$count more"
     override val transcriptChip = "Transcript"
-    override val hardWordChip = "Hard word"
     override val autoTranslateChip = "Auto translate"
     override val showTranslationsChip = "Show translations"
     override val noRelevantSentenceMessage = "No relevant sentence found (that pause looks like it fell in a quiet stretch)."
@@ -302,8 +308,9 @@ object EnglishStrings : AppStrings {
     override val continueLabel = "Continue"
     override val reviewWhatYouLearnedTitle = "Review what you learned?"
     override val wantToTryQuizText = "Want to try a quick quiz on the words you didn't know in this episode?"
-    override val startQuizPromptTitle = "Quiz yourself first?"
-    override val startQuizPromptText = "This episode has words you don't know yet. Want a quick quiz before you start listening?"
+    override val wordCheckTitle = "Word Check"
+    override val wordCheckQuizTab = "Quiz"
+    override val wordCheckSimpleTab = "Simple"
     override val yes = "Yes"
     override val no = "No"
     override val quizCompleteTitle = "Quiz complete!"
@@ -311,6 +318,7 @@ object EnglishStrings : AppStrings {
     override fun questionXOfY(index: Int, total: Int) = "Question $index/$total"
     override val seeResults = "See results"
     override val next = "Next"
+    override val skip = "Skip"
     override fun skipForwardSecondsContentDescription(seconds: Long) = "Skip forward $seconds seconds"
     override fun skipBackSecondsContentDescription(seconds: Long) = "Skip back $seconds seconds"
     override val nextEpisodeContentDescription = "Next episode"
@@ -346,17 +354,20 @@ object HebrewStrings : AppStrings {
     override val languageLabel = "שפה"
     override val languageEnglish = "אנגלית"
     override val languageHebrew = "עברית"
-    override val hardWordModeTitle = "תרגום המילה הקשה ביותר בלבד"
-    override val hardWordModeDescription = "בהפעלה, תתורגם רק המילה הקשה ביותר במשפט (לפי רמת Oxford CEFR). " +
+    override val hardWordModeTriggerTitle = "תרגום המילה הקשה ביותר בלבד (הפעלה ידנית)"
+    override val hardWordModeTriggerDescription = "בהפעלה ידנית, תתורגם רק המילה הקשה ביותר במשפט (לפי רמת Oxford CEFR). " +
         "הפעלה נוספת מיד על אותו משפט תחשוף את המילה הקשה הבאה."
     override val autoFullSentenceTitle = "משפט שלם אוטומטית במשפטים קשים"
     override fun autoFullSentenceDescription(hardWordCount: Int) =
-        "במצב מילה קשה: אם יש במשפט $hardWordCount מילים קשות או יותר, יתורגם המשפט כולו במקום מילה אחת בכל פעם."
+        "במסגרת מצב המילה הקשה של ההפעלה הידנית: אם יש במשפט $hardWordCount מילים קשות או יותר, יתורגם המשפט כולו במקום מילה אחת בכל פעם."
     override val autoPlayNextTitle = "ניגון אוטומטי של הפרק הבא"
     override val autoPlayNextDescription = "כשפרק מסתיים, הפרק הבא בפודקאסט יתחיל אוטומטית."
     override val autoTranslateReadAloudTitle = "הקראת מילים שתורגמו אוטומטית"
     override val autoTranslateReadAloudDescription = "כשהתרגום האוטומטי מוצא מילה שאינך מכיר/ה, הניגון יושהה " +
-        "והיא תוקרא בקול כמו בהפעלה ידנית - רק המילה אם מצב מילה קשה פעיל, או המשפט כולו בכל מקרה אחר."
+        "והיא תוקרא בקול כמו בהפעלה ידנית - רק המילה או המשפט כולו, בהתאם להגדרה שמופיעה למטה."
+    override val hardWordModeAutoTranslateTitle = "תרגום המילה הקשה ביותר בלבד (תרגום אוטומטי)"
+    override val hardWordModeAutoTranslateDescription = "כשהתרגום האוטומטי מקריא משפט בקול, יוקרא רק המילה הלא " +
+        "מוכרת המסומנת במקום המשפט השלם. הגדרה זו נפרדת מהגדרת המילה הקשה של ההפעלה הידנית שמופיעה למעלה."
     override val unknownWordsTitle = "מילים שאינך מכיר/ה"
     override val unknownWordsDescription = "צפייה ועריכה של המילים המסומנות לתרגום אוטומטי."
     override fun aboutContentDescription(settingTitle: String) = "מידע על $settingTitle"
@@ -442,7 +453,6 @@ object HebrewStrings : AppStrings {
     override val buildingTranscript = "בונה תמלול..."
     override fun moreDownloadsSuffix(count: Int) = "+$count נוספים"
     override val transcriptChip = "תמלול"
-    override val hardWordChip = "מילה קשה"
     override val autoTranslateChip = "תרגום אוטומטי"
     override val showTranslationsChip = "הצג תרגומים"
     override val noRelevantSentenceMessage = "לא נמצא משפט רלוונטי (נראה שההשהיה הזו הייתה בקטע שקט)."
@@ -453,8 +463,9 @@ object HebrewStrings : AppStrings {
     override val continueLabel = "המשך"
     override val reviewWhatYouLearnedTitle = "לסקור את מה שלמדת?"
     override val wantToTryQuizText = "לנסות חידון קצר על המילים שלא הכרת בפרק הזה?"
-    override val startQuizPromptTitle = "להיבחן קודם?"
-    override val startQuizPromptText = "בפרק הזה יש מילים שעדיין אינך מכיר/ה. רוצה חידון קצר לפני שמתחילים להאזין?"
+    override val wordCheckTitle = "בדיקת מילים"
+    override val wordCheckQuizTab = "חידון"
+    override val wordCheckSimpleTab = "פשוט"
     override val yes = "כן"
     override val no = "לא"
     override val quizCompleteTitle = "החידון הושלם!"
@@ -462,6 +473,7 @@ object HebrewStrings : AppStrings {
     override fun questionXOfY(index: Int, total: Int) = "שאלה $index מתוך $total"
     override val seeResults = "הצגת התוצאות"
     override val next = "הבא"
+    override val skip = "דילוג"
     override fun skipForwardSecondsContentDescription(seconds: Long) = "קפיצה קדימה ב-$seconds שניות"
     override fun skipBackSecondsContentDescription(seconds: Long) = "קפיצה אחורה ב-$seconds שניות"
     override val nextEpisodeContentDescription = "הפרק הבא"

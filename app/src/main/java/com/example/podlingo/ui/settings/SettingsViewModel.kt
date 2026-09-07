@@ -28,10 +28,16 @@ class SettingsViewModel @Inject constructor(
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val hardWordModeEnabled: StateFlow<Boolean> = settingsRepository.hardWordModeEnabled
+    val hardWordModeTriggerEnabled: StateFlow<Boolean> = settingsRepository.hardWordModeTriggerEnabled
 
-    fun setHardWordModeEnabled(enabled: Boolean) {
-        settingsRepository.setHardWordModeEnabled(enabled)
+    fun setHardWordModeTriggerEnabled(enabled: Boolean) {
+        settingsRepository.setHardWordModeTriggerEnabled(enabled)
+    }
+
+    val hardWordModeAutoTranslateEnabled: StateFlow<Boolean> = settingsRepository.hardWordModeAutoTranslateEnabled
+
+    fun setHardWordModeAutoTranslateEnabled(enabled: Boolean) {
+        settingsRepository.setHardWordModeAutoTranslateEnabled(enabled)
     }
 
     val autoFullSentenceEnabled: StateFlow<Boolean> = settingsRepository.autoFullSentenceEnabled

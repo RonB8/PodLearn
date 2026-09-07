@@ -135,7 +135,7 @@ class NowPlayingViewModel @Inject constructor(
         val effectiveTimeMs = positionMs - AppDefaults.REACTION_DELAY_MS
         val currentSentenceId = watchedSentences.lastOrNull { it.startMs <= effectiveTimeMs }?.id ?: return
         val readAloud = settingsRepository.autoTranslateReadAloudEnabled.value
-        val sentenceMode = readAloud && !settingsRepository.hardWordModeEnabled.value
+        val sentenceMode = readAloud && !settingsRepository.hardWordModeAutoTranslateEnabled.value
         if (sentenceMode && currentSentenceId in spokenSentenceIdsForReadAloud) return
         val next = unknownWordOccurrences.firstOrNull {
             it.sentenceId == currentSentenceId &&
@@ -156,7 +156,7 @@ class NowPlayingViewModel @Inject constructor(
 
     private suspend fun speakAutoTranslatedWord(occurrence: WordTiming) {
         playerController.pause()
-        if (settingsRepository.hardWordModeEnabled.value) {
+        if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
             val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
             val translation = wordKnowledgeRepository.getOrFetchTranslation(word)
             speakEnglishThenHebrew(word, translation)

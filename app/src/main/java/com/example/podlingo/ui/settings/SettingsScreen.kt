@@ -53,7 +53,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val strings = LocalAppStrings.current
-    val hardWordModeEnabled by viewModel.hardWordModeEnabled.collectAsStateWithLifecycle()
+    val hardWordModeTriggerEnabled by viewModel.hardWordModeTriggerEnabled.collectAsStateWithLifecycle()
+    val hardWordModeAutoTranslateEnabled by viewModel.hardWordModeAutoTranslateEnabled.collectAsStateWithLifecycle()
     val autoFullSentenceEnabled by viewModel.autoFullSentenceEnabled.collectAsStateWithLifecycle()
     val autoPlayNextEnabled by viewModel.autoPlayNextEnabled.collectAsStateWithLifecycle()
     val autoTranslateReadAloudEnabled by viewModel.autoTranslateReadAloudEnabled.collectAsStateWithLifecycle()
@@ -101,10 +102,10 @@ fun SettingsScreen(
                 },
             )
             SettingsToggleItem(
-                title = strings.hardWordModeTitle,
-                description = strings.hardWordModeDescription,
-                checked = hardWordModeEnabled,
-                onCheckedChange = viewModel::setHardWordModeEnabled,
+                title = strings.hardWordModeTriggerTitle,
+                description = strings.hardWordModeTriggerDescription,
+                checked = hardWordModeTriggerEnabled,
+                onCheckedChange = viewModel::setHardWordModeTriggerEnabled,
                 strings = strings,
             )
             SettingsToggleItem(
@@ -112,7 +113,7 @@ fun SettingsScreen(
                 description = strings.autoFullSentenceDescription(AppDefaults.AUTO_FULL_SENTENCE_HARD_WORD_COUNT),
                 checked = autoFullSentenceEnabled,
                 onCheckedChange = viewModel::setAutoFullSentenceEnabled,
-                switchEnabled = hardWordModeEnabled,
+                switchEnabled = hardWordModeTriggerEnabled,
                 strings = strings,
             )
             SettingsToggleItem(
@@ -127,6 +128,14 @@ fun SettingsScreen(
                 description = strings.autoTranslateReadAloudDescription,
                 checked = autoTranslateReadAloudEnabled,
                 onCheckedChange = viewModel::setAutoTranslateReadAloudEnabled,
+                strings = strings,
+            )
+            SettingsToggleItem(
+                title = strings.hardWordModeAutoTranslateTitle,
+                description = strings.hardWordModeAutoTranslateDescription,
+                checked = hardWordModeAutoTranslateEnabled,
+                onCheckedChange = viewModel::setHardWordModeAutoTranslateEnabled,
+                switchEnabled = autoTranslateReadAloudEnabled,
                 strings = strings,
             )
             ListItem(

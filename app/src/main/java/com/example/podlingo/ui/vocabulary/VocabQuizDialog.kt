@@ -17,11 +17,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.example.podlingo.ui.player.VocabQuizQuestion
 import com.example.podlingo.ui.player.VocabQuizState
 import com.example.podlingo.ui.strings.LocalAppStrings
 
@@ -68,41 +70,57 @@ fun VocabQuizDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(question.word, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    question.options.forEach { option ->
-                        val isCorrectOption = option == question.correctAnswer
-                        val containerColor = when {
-                            answered == null -> MaterialTheme.colorScheme.surfaceVariant
-                            isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
-                            option == answered -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
+                    QuizQuestionOptions(question = question, answered = answered, onAnswerSelected = onAnswerSelected)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (answered == null) {
+                        TextButton(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+                            Text(strings.skip)
                         }
-                        val contentColor = when {
-                            answered == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                            isCorrectOption -> MaterialTheme.colorScheme.onPrimaryContainer
-                            option == answered -> MaterialTheme.colorScheme.onErrorContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Button(
-                            onClick = { if (answered == null) onAnswerSelected(option) },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor),
-                        ) {
-                            Text(option)
-                        }
-                    }
-                    // The start quiz (quiz.autoAdvance) advances itself on a short delay after any
-                    // answer - see PlayerViewModel.onQuizAnswerSelected - so it never needs this
-                    // button at all, manual or otherwise.
-                    if (answered != null && !quiz.autoAdvance) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                    } else {
                         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
                             Text(if (quiz.currentIndex + 1 >= quiz.questions.size) strings.seeResults else strings.next)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The word + multiple-choice options for one quiz question, with the right/wrong reveal once
+ * [answered] is set - shared by [VocabQuizDialog] and the pre-episode Word Check's Quiz tab (see
+ * [com.example.podlingo.ui.player.PlayerScreen]'s WordCheckDialog), so both quiz flows render
+ * questions identically.
+ */
+@Composable
+fun QuizQuestionOptions(
+    question: VocabQuizQuestion,
+    answered: String?,
+    onAnswerSelected: (String) -> Unit,
+) {
+    Text(question.word, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Spacer(modifier = Modifier.height(16.dp))
+    question.options.forEach { option ->
+        val isCorrectOption = option == question.correctAnswer
+        val containerColor = when {
+            answered == null -> MaterialTheme.colorScheme.surfaceVariant
+            isCorrectOption -> MaterialTheme.colorScheme.primaryContainer
+            option == answered -> MaterialTheme.colorScheme.errorContainer
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        }
+        val contentColor = when {
+            answered == null -> MaterialTheme.colorScheme.onSurfaceVariant
+            isCorrectOption -> MaterialTheme.colorScheme.onPrimaryContainer
+            option == answered -> MaterialTheme.colorScheme.onErrorContainer
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        Button(
+            onClick = { if (answered == null) onAnswerSelected(option) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor),
+        ) {
+            Text(option)
         }
     }
 }

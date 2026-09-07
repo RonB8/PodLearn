@@ -75,9 +75,6 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET lastPlayedEpochMs = NULL WHERE id = :id")
     suspend fun clearLastPlayed(id: String)
 
-    @Query("UPDATE episodes SET vocabCalibrated = 1 WHERE id = :id")
-    suspend fun markVocabCalibrated(id: String)
-
     @Query("UPDATE episodes SET startQuizCompleted = 1 WHERE id = :id")
     suspend fun markStartQuizCompleted(id: String)
 

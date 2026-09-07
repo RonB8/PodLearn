@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +65,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -104,6 +108,7 @@ import com.example.podlingo.player.PlayerUiState
 import com.example.podlingo.ui.playlists.AddToPlaylistDialog
 import com.example.podlingo.ui.strings.AppStrings
 import com.example.podlingo.ui.strings.LocalAppStrings
+import com.example.podlingo.ui.vocabulary.QuizQuestionOptions
 import com.example.podlingo.ui.vocabulary.VocabQuizDialog
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -133,27 +138,26 @@ fun PlayerScreen(
     if (showAddToPlaylist && readyState != null) {
         AddToPlaylistDialog(episodeId = readyState.episodeId, onDismiss = { showAddToPlaylist = false })
     }
-    readyState?.vocabCalibration?.let { calibration ->
-        VocabCalibrationDialog(
-            calibration = calibration,
-            onWordToggled = viewModel::onCalibrationWordToggled,
-            onSelectAllToggled = viewModel::onCalibrationSelectAllToggled,
-            onContinue = viewModel::onCalibrationContinue,
-            onDismiss = viewModel::onCalibrationDismissed,
+    readyState?.wordCheck?.let { wordCheck ->
+        WordCheckDialog(
+            wordCheck = wordCheck,
+            onTabSelected = viewModel::onWordCheckTabSelected,
+            onAnswerSelected = viewModel::onWordCheckAnswerSelected,
+            onSkip = viewModel::onWordCheckSkip,
+            onWordToggled = viewModel::onWordCheckWordToggled,
+            onSelectAllToggled = viewModel::onWordCheckSelectAllToggled,
+            onContinue = viewModel::onWordCheckContinue,
+            onDismiss = viewModel::onWordCheckDismissed,
         )
+    }
+    if (readyState?.wordCheckLoading == true && readyState.wordCheck == null) {
+        WordCheckLoadingDialog(onDismiss = viewModel::onWordCheckDismissed)
     }
     if (readyState?.quizPrompt == true) {
         QuizPromptDialog(
             title = strings.reviewWhatYouLearnedTitle,
             text = strings.wantToTryQuizText,
             onAnswer = viewModel::onQuizPromptAnswer,
-        )
-    }
-    if (readyState?.startQuizPrompt == true) {
-        QuizPromptDialog(
-            title = strings.startQuizPromptTitle,
-            text = strings.startQuizPromptText,
-            onAnswer = viewModel::onStartQuizPromptAnswer,
         )
     }
     readyState?.quiz?.let { quiz ->
@@ -219,7 +223,6 @@ fun PlayerScreen(
                     },
                     onToggleTranscript = viewModel::toggleTranscript,
                     onAddToPlaylist = { showAddToPlaylist = true },
-                    onToggleHardWordMode = viewModel::toggleHardWordMode,
                     onToggleAutoTranslate = viewModel::toggleAutoTranslate,
                     onToggleShowSentenceTranslations = viewModel::toggleShowSentenceTranslations,
                     onEnsureSentenceTranslation = viewModel::ensureSentenceTranslation,
@@ -315,7 +318,6 @@ private fun ReadyPlayerView(
     onDragEnd: (velocity: Float) -> Unit,
     onToggleTranscript: () -> Unit,
     onAddToPlaylist: () -> Unit,
-    onToggleHardWordMode: () -> Unit,
     onToggleAutoTranslate: () -> Unit,
     onToggleShowSentenceTranslations: () -> Unit,
     onEnsureSentenceTranslation: (SentenceEntity) -> Unit,
@@ -373,8 +375,6 @@ private fun ReadyPlayerView(
             transcriptVisible = state.transcriptVisible,
             onToggleTranscript = onToggleTranscript,
             onAddToPlaylist = onAddToPlaylist,
-            hardWordModeEnabled = state.hardWordModeEnabled,
-            onToggleHardWordMode = onToggleHardWordMode,
             autoTranslateEnabled = state.autoTranslateEnabled,
             onToggleAutoTranslate = onToggleAutoTranslate,
             showSentenceTranslationsEnabled = state.showSentenceTranslationsEnabled,
@@ -501,8 +501,6 @@ private fun PlayerActionRow(
     transcriptVisible: Boolean,
     onToggleTranscript: () -> Unit,
     onAddToPlaylist: () -> Unit,
-    hardWordModeEnabled: Boolean,
-    onToggleHardWordMode: () -> Unit,
     autoTranslateEnabled: Boolean,
     onToggleAutoTranslate: () -> Unit,
     showSentenceTranslationsEnabled: Boolean,
@@ -534,20 +532,6 @@ private fun PlayerActionRow(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-            )
-        }
-        item {
-            FilterChip(
-                selected = hardWordModeEnabled,
-                onClick = onToggleHardWordMode,
-                label = { Text(strings.hardWordChip) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Translate,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -995,14 +979,48 @@ fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () -> Unit) {
 }
 
 /**
- * The "which of this episode's hardest words do you already know" step - rises up from the
- * bottom on first appearance and settles centered (a plain, screen-anchored [Dialog], not a
- * Material3 bottom sheet docked to the edge). Cascading to an easier tier updates [calibration]
- * in place without re-triggering the enter animation - only the panel's arrival animates.
+ * Shown while the first Word Check tier is still being built (translations fetched live for a
+ * batch of never-seen words) - without this the screen would look frozen: audio isn't playing yet
+ * ([PlayerViewModel.startPlayback] holds off autoPlay), and there's no dialog on screen either.
+ * Still dismissible, same as the real dialog once it appears.
  */
 @Composable
-private fun VocabCalibrationDialog(
-    calibration: VocabCalibrationState,
+private fun WordCheckLoadingDialog(onDismiss: () -> Unit) {
+    val strings = LocalAppStrings.current
+    Dialog(onDismissRequest = onDismiss) {
+        Card(shape = RoundedCornerShape(24.dp)) {
+            Column(
+                modifier = Modifier.padding(32.dp).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(strings.wordCheckTitle, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = strings.translatingEllipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The pre-episode vocabulary assessment - rises up from the bottom on first appearance and
+ * settles centered (a plain, screen-anchored [Dialog], not a Material3 bottom sheet docked to the
+ * edge). Cascading to an easier tier updates [wordCheck] in place without re-triggering the enter
+ * animation - only the panel's arrival animates. The Quiz tab (multiple choice, reusing
+ * [QuizQuestionOptions]) and the Simple tab (tap the words you don't know, like the old
+ * calibration panel) both work through the same tier of words - see [WordCheckState].
+ */
+@Composable
+private fun WordCheckDialog(
+    wordCheck: WordCheckState,
+    onTabSelected: (WordCheckTab) -> Unit,
+    onAnswerSelected: (String) -> Unit,
+    onSkip: () -> Unit,
     onWordToggled: (String) -> Unit,
     onSelectAllToggled: () -> Unit,
     onContinue: () -> Unit,
@@ -1010,7 +1028,7 @@ private fun VocabCalibrationDialog(
 ) {
     val strings = LocalAppStrings.current
     // A true cancel, distinct from onContinue - dismissing (back gesture, tap-outside, the X
-    // below) leaves every word in this tier undecided, so none of them get silently marked
+    // below) leaves every undecided word in this tier alone, so none of them get silently marked
     // "known" just because the user closed the panel without answering.
     Dialog(onDismissRequest = onDismiss) {
         var visible by remember { mutableStateOf(false) }
@@ -1020,61 +1038,133 @@ private fun VocabCalibrationDialog(
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         ) {
             Card(shape = RoundedCornerShape(24.dp)) {
-                Column(
-                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(strings.wordCheckTitle, style = MaterialTheme.typography.titleLarge)
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Filled.Close, contentDescription = strings.dismiss)
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Filled.School,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = strings.doYouKnowTheseWordsTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = strings.tapWordsExplanation,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-                    )
-                    // Handy when most of the tier is unfamiliar - select everything, then tap off
-                    // the few words already known, instead of tapping every unfamiliar one.
-                    TextButton(onClick = onSelectAllToggled, modifier = Modifier.align(Alignment.End)) {
-                        Text(if (calibration.selected.size == calibration.words.size) strings.deselectAll else strings.selectAll)
+                    TabRow(selectedTabIndex = wordCheck.tab.ordinal) {
+                        Tab(
+                            selected = wordCheck.tab == WordCheckTab.QUIZ,
+                            onClick = { onTabSelected(WordCheckTab.QUIZ) },
+                            text = { Text(strings.wordCheckQuizTab) },
+                        )
+                        Tab(
+                            selected = wordCheck.tab == WordCheckTab.SIMPLE,
+                            onClick = { onTabSelected(WordCheckTab.SIMPLE) },
+                            text = { Text(strings.wordCheckSimpleTab) },
+                        )
                     }
-                    // Capped and independently scrollable so a long word list can never push the
-                    // Continue button itself off-screen - the header and button always stay put.
-                    FlowRow(
-                        modifier = Modifier
-                            .heightIn(max = CALIBRATION_WORD_LIST_MAX_HEIGHT_DP.dp)
-                            .verticalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        calibration.words.forEach { word ->
-                            FilterChip(
-                                selected = word in calibration.selected,
-                                onClick = { onWordToggled(word) },
-                                label = { Text(word) },
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
-                        Text(strings.continueLabel)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    when (wordCheck.tab) {
+                        WordCheckTab.QUIZ -> WordCheckQuizTab(wordCheck, onAnswerSelected, onSkip)
+                        WordCheckTab.SIMPLE -> WordCheckSimpleTab(wordCheck, onWordToggled, onSelectAllToggled, onContinue)
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WordCheckQuizTab(wordCheck: WordCheckState, onAnswerSelected: (String) -> Unit, onSkip: () -> Unit) {
+    val strings = LocalAppStrings.current
+    val question = wordCheck.questions.getOrNull(wordCheck.currentIndex)
+    if (question == null) {
+        // Every word in this tier lacks a buildable question (e.g. not enough real distractors
+        // exist yet) - nothing to show here, the Simple tab is how this tier gets finished.
+        Text(
+            text = strings.tapWordsExplanation,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    val answered = wordCheck.answeredThisQuestion
+    Text(
+        text = strings.questionXOfY(wordCheck.currentIndex + 1, wordCheck.questions.size),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    QuizQuestionOptions(question = question, answered = answered, onAnswerSelected = onAnswerSelected)
+    if (answered == null) {
+        Spacer(modifier = Modifier.height(12.dp))
+        TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.skip)
+        }
+    }
+}
+
+@Composable
+private fun WordCheckSimpleTab(
+    wordCheck: WordCheckState,
+    onWordToggled: (String) -> Unit,
+    onSelectAllToggled: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    val strings = LocalAppStrings.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = strings.doYouKnowTheseWordsTitle,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = strings.tapWordsExplanation,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+        )
+        val toggleable = wordCheck.words - wordCheck.quizCorrectWords
+        TextButton(onClick = onSelectAllToggled, modifier = Modifier.align(Alignment.End)) {
+            Text(if (toggleable.isNotEmpty() && wordCheck.tapSelected.containsAll(toggleable)) strings.deselectAll else strings.selectAll)
+        }
+        // Capped and independently scrollable so a long word list can never push the Continue
+        // button itself off-screen - the header and button always stay put.
+        FlowRow(
+            modifier = Modifier
+                .heightIn(max = CALIBRATION_WORD_LIST_MAX_HEIGHT_DP.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            wordCheck.words.forEach { word ->
+                if (word in wordCheck.quizCorrectWords) {
+                    // Already answered correctly in the Quiz tab - shown resolved, not tappable.
+                    AssistChip(
+                        onClick = {},
+                        enabled = false,
+                        leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
+                        label = { Text(word) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            disabledContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            disabledLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            disabledLeadingIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                } else {
+                    FilterChip(
+                        // Pre-selected if it was answered wrong in the Quiz tab, same as if the user
+                        // had tapped it here - still freely editable either way from this tab.
+                        selected = word in wordCheck.tapSelected,
+                        onClick = { onWordToggled(word) },
+                        label = { Text(word) },
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.continueLabel)
         }
     }
 }
