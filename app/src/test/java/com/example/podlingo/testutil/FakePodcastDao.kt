@@ -14,6 +14,10 @@ class FakePodcastDao : PodcastDao {
         podcasts.update { current -> current.filterNot { it.id == podcast.id } + podcast }
     }
 
+    override suspend fun update(podcast: PodcastEntity) {
+        podcasts.update { current -> current.map { if (it.id == podcast.id) podcast else it } }
+    }
+
     override fun getAll(): Flow<List<PodcastEntity>> = podcasts
 
     override suspend fun getById(id: String): PodcastEntity? = podcasts.value.find { it.id == id }

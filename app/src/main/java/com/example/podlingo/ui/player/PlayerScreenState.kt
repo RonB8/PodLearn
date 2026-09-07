@@ -34,14 +34,22 @@ sealed interface PlayerScreenState {
         val activeWord: String? = null,
         /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.autoTranslateEnabled]. */
         val autoTranslateEnabled: Boolean = false,
+        /** Mirrors [com.example.podlingo.data.repository.SettingsRepository.showSentenceTranslationsEnabled]. */
+        val showSentenceTranslationsEnabled: Boolean = false,
+        /** Hebrew translation per sentence id, filled in lazily as sentences scroll into view - see [PlayerViewModel.ensureSentenceTranslation]. Not persisted; refetched each playthrough, matching the trigger overlay's own translations. */
+        val sentenceTranslations: Map<String, String> = emptyMap(),
+        /** Sentence ids with a translation fetch in flight, so [PlayerViewModel.ensureSentenceTranslation] never fires the same request twice. */
+        val translatingSentenceIds: Set<String> = emptySet(),
         /** Non-null while the "which of these words do you know" panel is open for this episode. */
         val vocabCalibration: VocabCalibrationState? = null,
         /** A transient inline translation shown while an unknown word plays - see [PlayerViewModel]. */
         val translationPopup: WordTranslationPopup? = null,
         /** True while the "review words you didn't know?" Yes/No prompt is showing after the episode ends. */
         val quizPrompt: Boolean = false,
-        /** Non-null while the end-of-episode vocabulary quiz is active. */
+        /** Non-null while the end-of-episode vocabulary quiz, or the pre-episode start quiz, is active - see [VocabQuizState.autoAdvance] to tell which. */
         val quiz: VocabQuizState? = null,
+        /** True while the "quiz yourself before you start?" Yes/No prompt is showing - only ever offered once per episode, on a genuinely fresh start (see [PlayerViewModel.startPlayback]). */
+        val startQuizPrompt: Boolean = false,
     ) : PlayerScreenState
 
     data class Failed(val message: String, val episodeTitle: String? = null) : PlayerScreenState

@@ -92,7 +92,10 @@ fun VocabQuizDialog(
                             Text(option)
                         }
                     }
-                    if (answered != null) {
+                    // The start quiz (quiz.autoAdvance) advances itself on a short delay after any
+                    // answer - see PlayerViewModel.onQuizAnswerSelected - so it never needs this
+                    // button at all, manual or otherwise.
+                    if (answered != null && !quiz.autoAdvance) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
                             Text(if (quiz.currentIndex + 1 >= quiz.questions.size) strings.seeResults else strings.next)

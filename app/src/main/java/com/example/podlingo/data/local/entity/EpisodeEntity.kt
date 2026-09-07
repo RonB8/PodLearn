@@ -30,4 +30,6 @@ data class EpisodeEntity(
     val lastPlayedEpochMs: Long? = null,
     /** Whether the vocabulary calibration panel has already been offered for this episode - once true, opening it again never auto-prompts, only an explicit "Auto translate" chip tap does. */
     val vocabCalibrated: Boolean = false,
+    /** Whether the pre-episode "quiz yourself on the words you don't know" flow has been completed for this episode - only true once the user finishes it, not merely declines, so a decline offers it again on the next fresh start. */
+    val startQuizCompleted: Boolean = false,
 )

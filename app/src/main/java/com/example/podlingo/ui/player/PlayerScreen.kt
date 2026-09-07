@@ -143,7 +143,18 @@ fun PlayerScreen(
         )
     }
     if (readyState?.quizPrompt == true) {
-        QuizPromptDialog(onAnswer = viewModel::onQuizPromptAnswer)
+        QuizPromptDialog(
+            title = strings.reviewWhatYouLearnedTitle,
+            text = strings.wantToTryQuizText,
+            onAnswer = viewModel::onQuizPromptAnswer,
+        )
+    }
+    if (readyState?.startQuizPrompt == true) {
+        QuizPromptDialog(
+            title = strings.startQuizPromptTitle,
+            text = strings.startQuizPromptText,
+            onAnswer = viewModel::onStartQuizPromptAnswer,
+        )
     }
     readyState?.quiz?.let { quiz ->
         VocabQuizDialog(
@@ -210,6 +221,8 @@ fun PlayerScreen(
                     onAddToPlaylist = { showAddToPlaylist = true },
                     onToggleHardWordMode = viewModel::toggleHardWordMode,
                     onToggleAutoTranslate = viewModel::toggleAutoTranslate,
+                    onToggleShowSentenceTranslations = viewModel::toggleShowSentenceTranslations,
+                    onEnsureSentenceTranslation = viewModel::ensureSentenceTranslation,
                     onDismissTranslationPopup = viewModel::dismissTranslationPopup,
                 )
                 is PlayerScreenState.Failed -> FailedView(state.message, onRetry = viewModel::retry)
@@ -304,6 +317,8 @@ private fun ReadyPlayerView(
     onAddToPlaylist: () -> Unit,
     onToggleHardWordMode: () -> Unit,
     onToggleAutoTranslate: () -> Unit,
+    onToggleShowSentenceTranslations: () -> Unit,
+    onEnsureSentenceTranslation: (SentenceEntity) -> Unit,
     onDismissTranslationPopup: () -> Unit,
 ) {
     val wordsBySentence = remember(state.words) { state.words.groupBy { it.sentenceId } }
@@ -343,7 +358,12 @@ private fun ReadyPlayerView(
                 activeSentenceId = state.activeSentenceId,
                 activeWord = state.activeWord,
                 isTranslating = state.isTranslating,
+                resolvedSentenceText = state.resolvedSentenceText,
                 translatedSentenceText = state.translatedSentenceText,
+                showSentenceTranslationsEnabled = state.showSentenceTranslationsEnabled,
+                sentenceTranslations = state.sentenceTranslations,
+                translatingSentenceIds = state.translatingSentenceIds,
+                onEnsureSentenceTranslation = onEnsureSentenceTranslation,
                 onDismissOverlay = onDismissOverlay,
                 onSentenceClick = { sentence -> onSeek(sentence.startMs) },
             )
@@ -357,6 +377,8 @@ private fun ReadyPlayerView(
             onToggleHardWordMode = onToggleHardWordMode,
             autoTranslateEnabled = state.autoTranslateEnabled,
             onToggleAutoTranslate = onToggleAutoTranslate,
+            showSentenceTranslationsEnabled = state.showSentenceTranslationsEnabled,
+            onToggleShowSentenceTranslations = onToggleShowSentenceTranslations,
         )
         Spacer(modifier = Modifier.height(20.dp))
         // Pinned to Ltr regardless of app language - per product decision, the seek bar and
@@ -412,7 +434,12 @@ private fun EpisodeArtwork(
     activeSentenceId: String?,
     activeWord: String?,
     isTranslating: Boolean,
+    resolvedSentenceText: String?,
     translatedSentenceText: String?,
+    showSentenceTranslationsEnabled: Boolean,
+    sentenceTranslations: Map<String, String>,
+    translatingSentenceIds: Set<String>,
+    onEnsureSentenceTranslation: (SentenceEntity) -> Unit,
     onDismissOverlay: () -> Unit,
     onSentenceClick: (SentenceEntity) -> Unit,
 ) {
@@ -454,7 +481,12 @@ private fun EpisodeArtwork(
                         activeSentenceId = activeSentenceId,
                         activeWord = activeWord,
                         isTranslating = isTranslating,
+                        resolvedSentenceText = resolvedSentenceText,
                         translatedSentenceText = translatedSentenceText,
+                        showSentenceTranslationsEnabled = showSentenceTranslationsEnabled,
+                        sentenceTranslations = sentenceTranslations,
+                        translatingSentenceIds = translatingSentenceIds,
+                        onEnsureSentenceTranslation = onEnsureSentenceTranslation,
                         onDismissOverlay = onDismissOverlay,
                         onSentenceClick = onSentenceClick,
                     )
@@ -473,6 +505,8 @@ private fun PlayerActionRow(
     onToggleHardWordMode: () -> Unit,
     autoTranslateEnabled: Boolean,
     onToggleAutoTranslate: () -> Unit,
+    showSentenceTranslationsEnabled: Boolean,
+    onToggleShowSentenceTranslations: () -> Unit,
 ) {
     val strings = LocalAppStrings.current
     LazyRow(
@@ -534,6 +568,20 @@ private fun PlayerActionRow(
                 },
             )
         }
+        item {
+            FilterChip(
+                selected = showSentenceTranslationsEnabled,
+                onClick = onToggleShowSentenceTranslations,
+                label = { Text(strings.showTranslationsChip) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Translate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -552,7 +600,12 @@ private fun TranscriptView(
     activeSentenceId: String?,
     activeWord: String?,
     isTranslating: Boolean,
+    resolvedSentenceText: String?,
     translatedSentenceText: String?,
+    showSentenceTranslationsEnabled: Boolean,
+    sentenceTranslations: Map<String, String>,
+    translatingSentenceIds: Set<String>,
+    onEnsureSentenceTranslation: (SentenceEntity) -> Unit,
     onDismissOverlay: () -> Unit,
     onSentenceClick: (SentenceEntity) -> Unit,
 ) {
@@ -567,8 +620,16 @@ private fun TranscriptView(
         sentences
     }
 
-    LaunchedEffect(highlightedSentenceId) {
-        val index = sentences.indexOfFirst { it.id == highlightedSentenceId }
+    // While the panel is up, scroll to it (the last item) rather than the sentence above it - a
+    // long sentence plus its translation routinely doesn't fit in the square artwork area's
+    // limited height, and it's the translation the user triggered this for, so that's the part
+    // that must stay on screen even if it means the (already-read) original sentence scrolls out
+    // above it. Keyed on translatedSentenceText too - the panel is still short (just "...") the
+    // instant showTranslationPanel first turns true, then grows once the translation actually
+    // lands, so re-scrolling only on that first transition would leave the newly-added Hebrew
+    // lines below whatever was already brought into view.
+    LaunchedEffect(highlightedSentenceId, showTranslationPanel, translatedSentenceText) {
+        val index = if (showTranslationPanel) visibleSentences.size else sentences.indexOfFirst { it.id == highlightedSentenceId }
         if (index >= 0) listState.animateScrollToItem(index)
     }
 
@@ -591,18 +652,38 @@ private fun TranscriptView(
                 !isTriggerDriven -> words.firstOrNull { positionMs in it.startMs until it.endMs }
                 else -> null
             }
-            Text(
-                text = buildSentenceAnnotatedString(
-                    sentence = sentence,
-                    words = words,
-                    isCurrentSentence = isCurrentSentence,
-                    boldWholeSentence = boldWholeSentence,
-                    highlightedWord = highlightedWord,
-                    highlightWeight = if (isTriggerDriven) FontWeight.Black else FontWeight.Bold,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.clickable { onSentenceClick(sentence) },
-            )
+            if (showSentenceTranslationsEnabled) {
+                LaunchedEffect(sentence.id) { onEnsureSentenceTranslation(sentence) }
+            }
+            Column(modifier = Modifier.clickable { onSentenceClick(sentence) }) {
+                Text(
+                    text = buildSentenceAnnotatedString(
+                        sentence = sentence,
+                        words = words,
+                        isCurrentSentence = isCurrentSentence,
+                        boldWholeSentence = boldWholeSentence,
+                        highlightedWord = highlightedWord,
+                        highlightWeight = if (isTriggerDriven) FontWeight.Black else FontWeight.Bold,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (showSentenceTranslationsEnabled) {
+                    val translation = sentenceTranslations[sentence.id]
+                    if (translation != null) {
+                        Text(
+                            text = translation,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = if (isCurrentSentence) 0.8f else 0.4f),
+                        )
+                    } else if (sentence.id in translatingSentenceIds) {
+                        Text(
+                            text = "…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.4f),
+                        )
+                    }
+                }
+            }
         }
 
         if (showTranslationPanel) {
@@ -610,10 +691,9 @@ private fun TranscriptView(
                 TranslationPanel(
                     isTranslating = isTranslating,
                     translatedText = translatedSentenceText,
-                    // Only set for hard-word mode's single-word trigger (see PlayerScreenState.activeWord) -
-                    // the full-sentence case leaves this null since the original sentence is already
-                    // visible, un-obscured, in the transcript line right above this panel.
-                    originalWord = activeWord,
+                    // The single word for hard-word mode, or the whole original sentence otherwise -
+                    // see PlayerScreenState.resolvedSentenceText.
+                    originalText = resolvedSentenceText,
                     onDismiss = onDismissOverlay,
                 )
             }
@@ -667,14 +747,13 @@ private fun buildSentenceAnnotatedString(
 private fun TranslationPanel(
     isTranslating: Boolean,
     translatedText: String?,
-    originalWord: String?,
+    originalText: String?,
     onDismiss: () -> Unit,
 ) {
     val strings = LocalAppStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 220.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Color.Black.copy(alpha = 0.94f))
             .padding(20.dp),
@@ -684,11 +763,19 @@ private fun TranslationPanel(
                 Icon(Icons.Filled.Close, contentDescription = strings.dismiss, tint = Color.White)
             }
         }
-        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+        // heightIn(min) lives here rather than weight(1f) on this Box - this Column is a
+        // LazyColumn item, always measured with unbounded height, and weight() can't divide up
+        // "remaining space" that's infinite: it collapses this Box toward zero height instead,
+        // clipping/hiding a long sentence + translation no matter how far the list is scrolled.
+        // A min-height Box still centers short content nicely and grows to fit long content.
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (originalWord != null) {
+                if (originalText != null) {
                     Text(
-                        text = originalWord,
+                        text = originalText,
                         color = Color.White,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
@@ -863,9 +950,14 @@ private fun NoRelevantSentenceBanner(onDismiss: () -> Unit) {
     }
 }
 
-/** Auto-dismisses on its own after [TRANSLATION_POPUP_DURATION_MS] - the user never has to interact with it, playback never pauses for it. */
+/**
+ * Auto-dismisses on its own after [TRANSLATION_POPUP_DURATION_MS] - the user never has to interact
+ * with it, playback never pauses for it. Not private: also reused by
+ * [com.example.podlingo.ui.navigation.PodLingoNavHost] to show the same banner above the
+ * mini-player when [NowPlayingViewModel] fires it while the full Player screen isn't open.
+ */
 @Composable
-private fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () -> Unit) {
+fun TranslationPopupBanner(popup: WordTranslationPopup, onDismiss: () -> Unit) {
     val strings = LocalAppStrings.current
     LaunchedEffect(popup) {
         delay(TRANSLATION_POPUP_DURATION_MS)
@@ -988,12 +1080,12 @@ private fun VocabCalibrationDialog(
 }
 
 @Composable
-private fun QuizPromptDialog(onAnswer: (startQuiz: Boolean) -> Unit) {
+private fun QuizPromptDialog(title: String, text: String, onAnswer: (startQuiz: Boolean) -> Unit) {
     val strings = LocalAppStrings.current
     AlertDialog(
         onDismissRequest = { onAnswer(false) },
-        title = { Text(strings.reviewWhatYouLearnedTitle) },
-        text = { Text(strings.wantToTryQuizText) },
+        title = { Text(title) },
+        text = { Text(text) },
         confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text(strings.yes) } },
         dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text(strings.no) } },
     )

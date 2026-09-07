@@ -72,10 +72,31 @@ object NetworkModule {
             .build()
             .create(WhisperApi::class.java)
 
-    /** Chat completions are used for Hebrew translation of trigger sentences; shares the OpenAI auth client. */
+    /**
+     * Client used for chat-completion translation calls: same OpenAI auth as [provideWhisperOkHttpClient],
+     * but short timeouts - a translation request is a few words of text, not an audio upload, so it
+     * should fail fast rather than potentially blocking playback resume (auto-translate pauses
+     * playback until the translation comes back) for minutes.
+     */
     @Provides
     @Singleton
-    fun provideTranslationApi(@WhisperOkHttpClient client: OkHttpClient, json: Json): TranslationApi =
+    @TranslationOkHttpClient
+    fun provideTranslationOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val authorized = chain.request().newBuilder()
+                .addHeader("Authorization", "Bearer ${BuildConfig.OPENAI_API_KEY}")
+                .build()
+            chain.proceed(authorized)
+        }
+        .build()
+
+    /** Chat completions are used for Hebrew translation of trigger sentences. */
+    @Provides
+    @Singleton
+    fun provideTranslationApi(@TranslationOkHttpClient client: OkHttpClient, json: Json): TranslationApi =
         Retrofit.Builder()
             .baseUrl(OPENAI_BASE_URL)
             .client(client)

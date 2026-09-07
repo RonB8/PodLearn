@@ -90,6 +90,13 @@ class PlaybackService : MediaSessionService() {
                 return SessionResult.RESULT_SUCCESS
             }
 
+            if (triggerEventBus.translationOverlayActive) {
+                // A translation is currently being fetched/read aloud - any resume attempt, from
+                // any source, means "show me the sentence before this one," not "keep playing."
+                triggerEventBus.requestPreviousSentence()
+                return SessionResult.RESULT_INFO_SKIPPED
+            }
+
             return when (val result = triggerDetector.onResume(SystemClock.elapsedRealtime())) {
                 is TriggerResult.Triggered -> {
                     triggerEventBus.emit(result)

@@ -85,6 +85,10 @@ class PodcastRepository @Inject constructor(
         episodeDao.markVocabCalibrated(episodeId)
     }
 
+    suspend fun markStartQuizCompleted(episodeId: String) {
+        episodeDao.markStartQuizCompleted(episodeId)
+    }
+
     fun getRecentlyPlayed(): Flow<List<RecentlyPlayedItem>> = episodeDao.getRecentlyPlayed()
 
     fun getRecentlyPlayedPodcasts(): Flow<List<RecentlyPlayedPodcast>> = episodeDao.getRecentlyPlayedPodcasts()

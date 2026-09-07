@@ -32,6 +32,7 @@ import com.example.podlingo.ui.player.DownloadingBanner
 import com.example.podlingo.ui.player.MiniPlayerBar
 import com.example.podlingo.ui.player.NowPlayingViewModel
 import com.example.podlingo.ui.player.PlayerScreen
+import com.example.podlingo.ui.player.TranslationPopupBanner
 import com.example.podlingo.ui.playlists.PlaylistDetailScreen
 import com.example.podlingo.ui.settings.SettingsScreen
 import com.example.podlingo.ui.vocabulary.UnknownWordsScreen
@@ -44,6 +45,7 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
     val nowPlayingViewModel: NowPlayingViewModel = hiltViewModel()
     val nowPlaying by nowPlayingViewModel.nowPlaying.collectAsStateWithLifecycle()
     val activeDownloads by nowPlayingViewModel.activeDownloads.collectAsStateWithLifecycle()
+    val translationBanner by nowPlayingViewModel.translationBanner.collectAsStateWithLifecycle()
     val appNavigationViewModel: AppNavigationViewModel = hiltViewModel()
     // currentBackStackEntryAsState() only reflects the *settled* (post-transition) entry - with
     // the Player route's dismiss transition below taking a couple hundred ms, that would leave
@@ -73,6 +75,9 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
             appNavigationViewModel.rememberRoute(route)
         }
     }
+    LaunchedEffect(currentRoute) {
+        nowPlayingViewModel.setPlayerScreenActive(currentRoute == Routes.PLAYER)
+    }
     LaunchedEffect(pagerState.currentPage) {
         appNavigationViewModel.rememberTabIndex(pagerState.currentPage)
     }
@@ -96,6 +101,15 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
                         onClick = { episodeId ->
                             navController.navigate(Routes.player(episodeId)) { launchSingleTop = true }
                         },
+                    )
+                }
+                // Auto-translate's silent popup, fired by NowPlayingViewModel while the full Player
+                // screen isn't the one on top - see PlayerScreen's own TranslationPopupBanner for
+                // the on-screen equivalent.
+                if (translationBanner != null && currentRoute != Routes.PLAYER) {
+                    TranslationPopupBanner(
+                        popup = translationBanner!!,
+                        onDismiss = nowPlayingViewModel::dismissTranslationBanner,
                     )
                 }
                 if (nowPlaying != null && currentRoute != Routes.PLAYER) {

@@ -20,7 +20,7 @@ import com.example.podlingo.data.local.entity.WordKnowledgeEntity
         PodcastEntity::class, EpisodeEntity::class, SentenceEntity::class, WordEntity::class,
         PlaylistEntity::class, PlaylistEpisodeCrossRef::class, WordKnowledgeEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

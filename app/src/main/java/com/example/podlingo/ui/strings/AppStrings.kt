@@ -140,6 +140,7 @@ interface AppStrings {
     val transcriptChip: String
     val hardWordChip: String
     val autoTranslateChip: String
+    val showTranslationsChip: String
     val noRelevantSentenceMessage: String
     val doYouKnowTheseWordsTitle: String
     val tapWordsExplanation: String
@@ -148,6 +149,8 @@ interface AppStrings {
     val continueLabel: String
     val reviewWhatYouLearnedTitle: String
     val wantToTryQuizText: String
+    val startQuizPromptTitle: String
+    val startQuizPromptText: String
     val yes: String
     val no: String
     val quizCompleteTitle: String
@@ -290,6 +293,7 @@ object EnglishStrings : AppStrings {
     override val transcriptChip = "Transcript"
     override val hardWordChip = "Hard word"
     override val autoTranslateChip = "Auto translate"
+    override val showTranslationsChip = "Show translations"
     override val noRelevantSentenceMessage = "No relevant sentence found (that pause looks like it fell in a quiet stretch)."
     override val doYouKnowTheseWordsTitle = "Do you know these words?"
     override val tapWordsExplanation = "Tap any word you don't know - it'll translate automatically when it comes up."
@@ -298,6 +302,8 @@ object EnglishStrings : AppStrings {
     override val continueLabel = "Continue"
     override val reviewWhatYouLearnedTitle = "Review what you learned?"
     override val wantToTryQuizText = "Want to try a quick quiz on the words you didn't know in this episode?"
+    override val startQuizPromptTitle = "Quiz yourself first?"
+    override val startQuizPromptText = "This episode has words you don't know yet. Want a quick quiz before you start listening?"
     override val yes = "Yes"
     override val no = "No"
     override val quizCompleteTitle = "Quiz complete!"
@@ -438,6 +444,7 @@ object HebrewStrings : AppStrings {
     override val transcriptChip = "תמלול"
     override val hardWordChip = "מילה קשה"
     override val autoTranslateChip = "תרגום אוטומטי"
+    override val showTranslationsChip = "הצג תרגומים"
     override val noRelevantSentenceMessage = "לא נמצא משפט רלוונטי (נראה שההשהיה הזו הייתה בקטע שקט)."
     override val doYouKnowTheseWordsTitle = "האם המילים האלה מוכרות לך?"
     override val tapWordsExplanation = "יש להקיש על כל מילה שאינך מכיר/ה - היא תתורגם אוטומטית כשהיא תופיע."
@@ -446,6 +453,8 @@ object HebrewStrings : AppStrings {
     override val continueLabel = "המשך"
     override val reviewWhatYouLearnedTitle = "לסקור את מה שלמדת?"
     override val wantToTryQuizText = "לנסות חידון קצר על המילים שלא הכרת בפרק הזה?"
+    override val startQuizPromptTitle = "להיבחן קודם?"
+    override val startQuizPromptText = "בפרק הזה יש מילים שעדיין אינך מכיר/ה. רוצה חידון קצר לפני שמתחילים להאזין?"
     override val yes = "כן"
     override val no = "לא"
     override val quizCompleteTitle = "החידון הושלם!"

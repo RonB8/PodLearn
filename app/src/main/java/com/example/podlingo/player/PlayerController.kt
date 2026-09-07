@@ -65,6 +65,14 @@ class PlayerController @Inject constructor(
 
     val triggerEvents: SharedFlow<TriggerResult.Triggered> = triggerEventBus.events
 
+    /** See [TriggerEventBus.previousSentenceRequests]. */
+    val previousSentenceRequests: SharedFlow<Unit> = triggerEventBus.previousSentenceRequests
+
+    /** See [TriggerEventBus.translationOverlayActive]. */
+    fun setTranslationOverlayActive(active: Boolean) {
+        triggerEventBus.translationOverlayActive = active
+    }
+
     private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
@@ -94,9 +102,12 @@ class PlayerController @Inject constructor(
     /**
      * Loads [episodeId]'s audio and starts playback - unless it's already the loaded episode
      * (e.g. re-entering the Player screen for something mid-playback), in which case this is a
-     * no-op so playback isn't restarted from the top.
+     * no-op so playback isn't restarted from the top. [autoPlay] false loads the audio (ready to
+     * play the instant something calls [play]/[resume]) without actually starting it - for a
+     * fresh episode with a start-quiz prompt still pending, so the audio doesn't play out from
+     * under the prompt even for a moment.
      */
-    fun prepare(episodeId: String, episodeTitle: String, artworkUrl: String?, localFilePath: String) {
+    fun prepare(episodeId: String, episodeTitle: String, artworkUrl: String?, localFilePath: String, autoPlay: Boolean = true) {
         if (_playerState.value.episodeId == episodeId) return
         withController { mediaController ->
             val mediaItem = MediaItem.Builder()
@@ -113,7 +124,7 @@ class PlayerController @Inject constructor(
             mediaController.setMediaItem(mediaItem)
             mediaController.prepare()
             mediaController.setPlaybackSpeed(speed)
-            mediaController.play()
+            if (autoPlay) mediaController.play()
         }
     }
 

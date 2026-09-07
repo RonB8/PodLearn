@@ -61,6 +61,15 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         _autoTranslateReadAloudEnabled.value = enabled
     }
 
+    private val _showSentenceTranslationsEnabled =
+        MutableStateFlow(prefs.getBoolean(KEY_SHOW_SENTENCE_TRANSLATIONS, false))
+    val showSentenceTranslationsEnabled: StateFlow<Boolean> = _showSentenceTranslationsEnabled.asStateFlow()
+
+    fun setShowSentenceTranslationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_SENTENCE_TRANSLATIONS, enabled).apply()
+        _showSentenceTranslationsEnabled.value = enabled
+    }
+
     private val _autoPlayNextEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_PLAY_NEXT, true))
     val autoPlayNextEnabled: StateFlow<Boolean> = _autoPlayNextEnabled.asStateFlow()
 
@@ -130,6 +139,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext context: Contex
         private const val KEY_AUTO_FULL_SENTENCE = "auto_full_sentence_enabled"
         private const val KEY_AUTO_TRANSLATE = "auto_translate_enabled"
         private const val KEY_AUTO_TRANSLATE_READ_ALOUD = "auto_translate_read_aloud_enabled"
+        private const val KEY_SHOW_SENTENCE_TRANSLATIONS = "show_sentence_translations_enabled"
         private const val KEY_AUTO_PLAY_NEXT = "auto_play_next_enabled"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_APP_LANGUAGE = "app_language"

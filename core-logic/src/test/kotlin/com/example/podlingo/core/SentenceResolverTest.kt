@@ -38,6 +38,30 @@ class SentenceResolverTest {
     }
 
     @Test
+    fun `pause just past the reaction-delay shift still resolves to the previous sentence via the extra start grace`() {
+        // Raw pause at 83_701ms: after the 0.7s reaction-delay shift, effective time (83_001ms) is
+        // already 1ms into s2 - past the point where the reaction-delay offset alone pulls it back
+        // to s1 - but the extra 700ms sentence-start grace still attributes it to s1.
+        val result = SentenceResolver.resolve(pauseTimeMs = 83_701, reactionDelayMs, words)
+        assertEquals(SentenceResolution.Resolved("s1"), result)
+    }
+
+    @Test
+    fun `pause beyond both the reaction delay and the start grace resolves to the new sentence`() {
+        // Raw pause at 84_401ms: effective time (83_701ms) is 701ms into s2 - just past the extra
+        // 700ms start grace on top of the reaction-delay shift, so it correctly resolves to s2.
+        val result = SentenceResolver.resolve(pauseTimeMs = 84_401, reactionDelayMs, words)
+        assertEquals(SentenceResolution.Resolved("s2"), result)
+    }
+
+    @Test
+    fun `sentence start grace never fires for the very first sentence`() {
+        // Raw pause 1ms after s1's own first word started (no sentence precedes it to fall back to).
+        val result = SentenceResolver.resolve(pauseTimeMs = 80_701, reactionDelayMs, words)
+        assertEquals(SentenceResolution.Resolved("s1"), result)
+    }
+
+    @Test
     fun `pause well into a new sentence resolves to that new sentence`() {
         // Raw pause at 89_000ms (6s after s2 started) - effective time (88_300ms) is still well
         // past s2's last word, so plenty of s2 had already played; it should not fall back to s1.

@@ -8,6 +8,14 @@ package com.example.podlingo.config
 object AppDefaults {
     const val PAUSE_THRESHOLD_MS = 2000L
     const val REACTION_DELAY_MS = 700L
+
+    /**
+     * Extra grace beyond [REACTION_DELAY_MS], on top of the reaction-delay shift SentenceResolver
+     * already applies: if the pause still lands within this long of the resolved sentence's own
+     * start, the user is almost certainly still reacting to the sentence before it (e.g. only one
+     * word of the new sentence has played), so resolve to that previous sentence instead.
+     */
+    const val SENTENCE_START_GRACE_MS = 700L
     const val SEEK_STEP_MS = 15_000L
 
     /**
@@ -42,4 +50,10 @@ object AppDefaults {
     const val MIN_STORAGE_LIMIT_BYTES = 500L * 1024 * 1024
     const val MAX_STORAGE_LIMIT_BYTES = 10L * 1024 * 1024 * 1024
     const val DEFAULT_STORAGE_LIMIT_BYTES = 2L * 1024 * 1024 * 1024
+
+    /** In the pre-episode start quiz, missing more than this fraction of a tier's questions pulls in another bunch from the next-easier tier - a much lower bar than calibration's, since these are words already known to be unknown, so any real trouble with a tier is worth probing further down. */
+    const val START_QUIZ_TIER_CASCADE_WRONG_THRESHOLD = 0.15
+
+    /** How long the start quiz holds each answer's right/wrong reveal before auto-advancing - long enough to register, short enough to stay quick. */
+    const val START_QUIZ_AUTO_ADVANCE_DELAY_MS = 900L
 }

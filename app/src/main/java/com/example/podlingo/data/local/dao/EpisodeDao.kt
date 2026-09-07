@@ -78,6 +78,9 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET vocabCalibrated = 1 WHERE id = :id")
     suspend fun markVocabCalibrated(id: String)
 
+    @Query("UPDATE episodes SET startQuizCompleted = 1 WHERE id = :id")
+    suspend fun markStartQuizCompleted(id: String)
+
     @Query(
         """
         SELECT episodes.id AS id, episodes.title AS title, podcasts.title AS podcastTitle,

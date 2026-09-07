@@ -12,16 +12,21 @@ package com.example.podlingo.core
  *    user cannot have been confused by something they had not heard.
  * 3. If the effective time falls in a silence gap of more than [maxGapMs] since that word ended
  *    (e.g. an ad break), don't guess - report [SentenceResolution.NoRelevantSentence].
+ * 4. If the effective time still falls within [sentenceStartGraceMs] of the resolved sentence's
+ *    own start, the reaction-delay shift alone wasn't enough - barely any of that sentence has
+ *    played, so attribute the trigger to the sentence before it instead (unless there isn't one).
  */
 object SentenceResolver {
 
     private const val DEFAULT_MAX_GAP_MS = 4500L
+    private const val DEFAULT_SENTENCE_START_GRACE_MS = 700L
 
     fun resolve(
         pauseTimeMs: Long,
         reactionDelayMs: Long,
         words: List<WordTiming>,
         maxGapMs: Long = DEFAULT_MAX_GAP_MS,
+        sentenceStartGraceMs: Long = DEFAULT_SENTENCE_START_GRACE_MS,
     ): SentenceResolution {
         if (words.isEmpty()) return SentenceResolution.NoRelevantSentence
 
@@ -41,11 +46,23 @@ object SentenceResolver {
 
         val candidate = words[idx]
         val silenceSinceCandidateEnded = (effectiveTimeMs - candidate.endMs).coerceAtLeast(0)
-        return if (silenceSinceCandidateEnded > maxGapMs) {
-            SentenceResolution.NoRelevantSentence
-        } else {
-            SentenceResolution.Resolved(candidate.sentenceId)
+        if (silenceSinceCandidateEnded > maxGapMs) return SentenceResolution.NoRelevantSentence
+
+        val sentenceStartIdx = firstWordIndexOfSentence(words, idx)
+        val sentenceStartMs = words[sentenceStartIdx].startMs
+        if (sentenceStartIdx > 0 && effectiveTimeMs - sentenceStartMs < sentenceStartGraceMs) {
+            return SentenceResolution.Resolved(words[sentenceStartIdx - 1].sentenceId)
         }
+
+        return SentenceResolution.Resolved(candidate.sentenceId)
+    }
+
+    /** Returns the index of [words]'s first word belonging to the same sentence as [words][fromIdx]. */
+    private fun firstWordIndexOfSentence(words: List<WordTiming>, fromIdx: Int): Int {
+        val sentenceId = words[fromIdx].sentenceId
+        var i = fromIdx
+        while (i > 0 && words[i - 1].sentenceId == sentenceId) i--
+        return i
     }
 
     /** Returns the index of the last element with startMs <= [targetMs], or -1 if none exists. */

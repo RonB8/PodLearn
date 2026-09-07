@@ -19,7 +19,24 @@ class TriggerEventBus @Inject constructor() {
     private val _events = MutableSharedFlow<TriggerResult.Triggered>(extraBufferCapacity = 1)
     val events: SharedFlow<TriggerResult.Triggered> = _events.asSharedFlow()
 
+    private val _previousSentenceRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val previousSentenceRequests: SharedFlow<Unit> = _previousSentenceRequests.asSharedFlow()
+
+    /**
+     * True while a full-sentence translation is currently being fetched/read aloud - kept in sync
+     * by [com.example.podlingo.ui.player.PlayerViewModel] and read synchronously here by
+     * [PlaybackService]'s `MediaSession.Callback`, so a play/pause command arriving mid-narration
+     * from *any* source (headphones, notification, lock screen, in-app button) is treated the same:
+     * as a request for the previous sentence rather than a normal resume.
+     */
+    @Volatile
+    var translationOverlayActive: Boolean = false
+
     fun emit(trigger: TriggerResult.Triggered) {
         _events.tryEmit(trigger)
+    }
+
+    fun requestPreviousSentence() {
+        _previousSentenceRequests.tryEmit(Unit)
     }
 }

@@ -46,3 +46,10 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("ALTER TABLE episodes ADD COLUMN vocabCalibrated INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+/** Tracks whether the pre-episode "quiz yourself first" flow has been completed, so a fresh start of the same episode doesn't re-offer it once it's done. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE episodes ADD COLUMN startQuizCompleted INTEGER NOT NULL DEFAULT 0")
+    }
+}

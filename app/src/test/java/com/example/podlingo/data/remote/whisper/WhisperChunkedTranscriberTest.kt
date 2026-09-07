@@ -79,6 +79,7 @@ class WhisperChunkedTranscriberTest {
             responseFormat: RequestBody,
             wordGranularity: RequestBody,
             segmentGranularity: RequestBody,
+            language: RequestBody,
         ): WhisperTranscriptionResponse = respond()
     }
 }

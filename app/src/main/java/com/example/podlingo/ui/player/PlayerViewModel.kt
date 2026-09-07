@@ -10,6 +10,7 @@ import com.example.podlingo.core.WordDifficultyRanker
 import com.example.podlingo.core.WordNormalizer
 import com.example.podlingo.core.WordTiming
 import com.example.podlingo.data.local.entity.EpisodeEntity
+import com.example.podlingo.data.local.entity.SentenceEntity
 import com.example.podlingo.data.local.entity.WordKnowledgeStatus
 import com.example.podlingo.data.repository.EpisodeDownloadManager
 import com.example.podlingo.data.repository.PodcastRepository
@@ -31,6 +32,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -66,6 +69,22 @@ class PlayerViewModel @Inject constructor(
     private var hardWordSentenceId: String? = null
     private var hardWordIndex: Int = 0
 
+    // The job currently fetching+narrating a trigger's translation, so a retrigger arriving
+    // mid-flight can cancel it outright instead of letting its eventual resumeIfNotQuizzing()
+    // race the new one and resume real playback out from under it.
+    private var activeTriggerJob: Job? = null
+
+    // Full-sentence mode retrigger backtracking. anchorFullSentenceId is the sentence
+    // SentenceResolver actually resolved from the *last* trigger's real pause position; when a
+    // new trigger resolves to that same anchor, no new audio has actually played since, so the
+    // user is retriggering because they want to hear something earlier rather than the same
+    // sentence again - see handleTrigger and showPreviousFullSentence. lastShownFullSentenceId is
+    // whatever sentence's translation is currently (or was most recently) displayed, which is what
+    // backtracking steps back from - it may already be earlier than the anchor after one or more
+    // backward steps.
+    private var anchorFullSentenceId: String? = null
+    private var lastShownFullSentenceId: String? = null
+
     // Vocab calibration: this episode's words grouped by CEFR rank (5=hardest..0=A1), computed
     // once per calibration pass so onCalibrationContinue can cascade to the next tier down.
     private var pendingDifficultyTiers: Map<Int, List<WordTiming>> = emptyMap()
@@ -84,6 +103,11 @@ class PlayerViewModel @Inject constructor(
     // End-of-episode quiz: the display-form words awaiting quiz-building once the user says yes.
     private var pendingQuizWords: List<String> = emptyList()
 
+    // Pre-episode start quiz: this episode's still-unknown words grouped by CEFR tier (hardest
+    // first), computed once at playback start so onStartQuizPromptAnswer/advanceQuiz can build
+    // each tier's questions on demand as the quiz cascades into easier ones.
+    private var pendingStartQuizTiers: List<List<String>> = emptyList()
+
     init {
         viewModelScope.launch { loadEpisode() }
 
@@ -99,6 +123,21 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             playerController.triggerEvents.collect { trigger ->
                 handleTrigger(trigger.pauseTimeMs)
+            }
+        }
+
+        viewModelScope.launch {
+            playerController.previousSentenceRequests.collect {
+                showPreviousFullSentence()
+            }
+        }
+
+        viewModelScope.launch {
+            uiState.collect { state ->
+                val overlayActive = state is PlayerScreenState.Ready &&
+                    !state.hardWordModeEnabled &&
+                    (state.isTranslating || state.resolvedSentenceText != null)
+                playerController.setTranslationOverlayActive(overlayActive)
             }
         }
 
@@ -125,11 +164,24 @@ class PlayerViewModel @Inject constructor(
             }
         }
 
+        viewModelScope.launch {
+            settingsRepository.showSentenceTranslationsEnabled.collect { enabled ->
+                _uiState.update { current ->
+                    if (current is PlayerScreenState.Ready) current.copy(showSentenceTranslationsEnabled = enabled) else current
+                }
+            }
+        }
+
     }
 
     fun togglePlayPause() {
         val state = _uiState.value
         if (state !is PlayerScreenState.Ready) return
+        // Deciding whether a play attempt while paused actually means "resume" or "show me the
+        // previous sentence" (a full-sentence trigger still in progress, or one that just finished)
+        // happens centrally in PlaybackService - see translationOverlayActive - so this behaves the
+        // same regardless of whether play came from this in-app button, headphones, the
+        // notification, or the lock screen.
         if (state.player.isPlaying) playerController.pause() else playerController.play()
     }
 
@@ -140,7 +192,7 @@ class PlayerViewModel @Inject constructor(
      */
     private fun resumeIfNotQuizzing() {
         val state = _uiState.value
-        if (state is PlayerScreenState.Ready && (state.quizPrompt || state.quiz != null)) return
+        if (state is PlayerScreenState.Ready && (state.quizPrompt || state.quiz != null || state.startQuizPrompt)) return
         playerController.resume()
     }
 
@@ -148,9 +200,25 @@ class PlayerViewModel @Inject constructor(
         nextEpisodeId?.let { _navigateToEpisode.tryEmit(it) }
     }
 
-    fun skipForward() = playerController.seekForward()
+    fun skipForward() {
+        resetFullSentenceBacktracking()
+        playerController.seekForward()
+    }
 
-    fun skipBackward() = playerController.seekBackward()
+    fun skipBackward() {
+        resetFullSentenceBacktracking()
+        playerController.seekBackward()
+    }
+
+    /**
+     * A manual seek/skip means the next trigger's pause position has nothing to do with whatever
+     * was last shown - without this, a coincidental match against a stale [anchorFullSentenceId]
+     * would incorrectly treat the next trigger as a "nothing new was heard" retrigger.
+     */
+    private fun resetFullSentenceBacktracking() {
+        anchorFullSentenceId = null
+        lastShownFullSentenceId = null
+    }
 
     fun setPlaybackSpeed(speed: Float) = playerController.setPlaybackSpeed(speed)
 
@@ -163,6 +231,40 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleHardWordMode() {
         settingsRepository.setHardWordModeEnabled(!settingsRepository.hardWordModeEnabled.value)
+    }
+
+    fun toggleShowSentenceTranslations() {
+        settingsRepository.setShowSentenceTranslationsEnabled(!settingsRepository.showSentenceTranslationsEnabled.value)
+    }
+
+    /**
+     * Lazily fetches a sentence's Hebrew translation for the always-on under-each-sentence display,
+     * called as each sentence scrolls into view - not the trigger overlay's on-demand translation.
+     * Like that overlay, results aren't persisted: [PlayerScreenState.Ready.sentenceTranslations]
+     * only lives for this playthrough's ViewModel instance.
+     */
+    fun ensureSentenceTranslation(sentence: SentenceEntity) {
+        val current = _uiState.value
+        if (current !is PlayerScreenState.Ready) return
+        if (sentence.id in current.sentenceTranslations || sentence.id in current.translatingSentenceIds) return
+        _uiState.update { latest ->
+            if (latest !is PlayerScreenState.Ready) return@update latest
+            latest.copy(translatingSentenceIds = latest.translatingSentenceIds + sentence.id)
+        }
+        viewModelScope.launch {
+            val translation = translationRepository.translateToHebrew(sentence.fullText).getOrNull()
+            _uiState.update { latest ->
+                if (latest !is PlayerScreenState.Ready) return@update latest
+                latest.copy(
+                    translatingSentenceIds = latest.translatingSentenceIds - sentence.id,
+                    sentenceTranslations = if (translation != null) {
+                        latest.sentenceTranslations + (sentence.id to translation)
+                    } else {
+                        latest.sentenceTranslations
+                    },
+                )
+            }
+        }
     }
 
     /**
@@ -271,36 +373,103 @@ class PlayerViewModel @Inject constructor(
                     quiz = latestQuiz.copy(
                         answeredThisQuestion = answer,
                         correctCount = latestQuiz.correctCount + if (isCorrect) 1 else 0,
+                        currentTierWrongCount = latestQuiz.currentTierWrongCount + if (isCorrect) 0 else 1,
+                        currentTierTotal = latestQuiz.currentTierTotal + 1,
                     ),
                 )
+            }
+            // Only the start quiz sets this - the end-of-episode quiz still waits for an explicit
+            // "Next" tap (see VocabQuizDialog).
+            if (quiz.autoAdvance) {
+                delay(AppDefaults.START_QUIZ_AUTO_ADVANCE_DELAY_MS)
+                advanceQuiz()
             }
         }
     }
 
     fun onQuizNext() {
+        viewModelScope.launch { advanceQuiz() }
+    }
+
+    /**
+     * Shared by the manual "Next" tap and the start quiz's auto-advance. For a plain (non-tiered)
+     * quiz this only ever steps forward or finishes, same as before - [VocabQuizState.remainingTiers]
+     * is empty so the cascade branch below never triggers. For the start quiz, reaching what would
+     * be the last question first checks whether this tier's wrong rate cleared the cascade bar; if
+     * so it pulls in the next tier's questions (skipping any that yield none) instead of finishing.
+     */
+    private suspend fun advanceQuiz() {
+        val quiz = (_uiState.value as? PlayerScreenState.Ready)?.quiz ?: return
+        val nextIndex = quiz.currentIndex + 1
+        if (nextIndex < quiz.questions.size) {
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                val q = current.quiz ?: return@update current
+                current.copy(quiz = q.copy(currentIndex = nextIndex, answeredThisQuestion = null))
+            }
+            return
+        }
+        val wrongRate = if (quiz.currentTierTotal > 0) quiz.currentTierWrongCount.toDouble() / quiz.currentTierTotal else 0.0
+        if (wrongRate > AppDefaults.START_QUIZ_TIER_CASCADE_WRONG_THRESHOLD) {
+            var remaining = quiz.remainingTiers
+            while (remaining.isNotEmpty()) {
+                val nextTierWords = remaining.first()
+                remaining = remaining.drop(1)
+                val nextQuestions = vocabQuizBuilder.buildQuizQuestions(nextTierWords)
+                if (nextQuestions.isNotEmpty()) {
+                    _uiState.update { current ->
+                        if (current !is PlayerScreenState.Ready) return@update current
+                        val q = current.quiz ?: return@update current
+                        current.copy(
+                            quiz = q.copy(
+                                questions = q.questions + nextQuestions,
+                                currentIndex = nextIndex,
+                                answeredThisQuestion = null,
+                                currentTierWrongCount = 0,
+                                currentTierTotal = 0,
+                                remainingTiers = remaining,
+                            ),
+                        )
+                    }
+                    return
+                }
+            }
+        }
         _uiState.update { current ->
             if (current !is PlayerScreenState.Ready) return@update current
-            val quiz = current.quiz ?: return@update current
-            val nextIndex = quiz.currentIndex + 1
-            val advanced = if (nextIndex >= quiz.questions.size) {
-                quiz.copy(finished = true)
-            } else {
-                quiz.copy(currentIndex = nextIndex, answeredThisQuestion = null)
-            }
-            current.copy(quiz = advanced)
+            val q = current.quiz ?: return@update current
+            current.copy(quiz = q.copy(finished = true))
         }
     }
 
     fun onQuizDismissed() {
+        val quiz = (_uiState.value as? PlayerScreenState.Ready)?.quiz
         _uiState.update { current -> if (current is PlayerScreenState.Ready) current.copy(quiz = null) else current }
-        advanceToNextEpisodeIfEnabled()
+        if (quiz?.autoAdvance == true) {
+            // Only a completed start quiz counts as "done" - bailing out early (the X button, mid-
+            // quiz) leaves it eligible to be offered again on the next fresh start of this episode.
+            if (quiz.finished) {
+                viewModelScope.launch { podcastRepository.markStartQuizCompleted(episodeId) }
+            }
+            playerController.play()
+        } else {
+            advanceToNextEpisodeIfEnabled()
+        }
     }
 
-    fun seekTo(positionMs: Long) = playerController.seekTo(positionMs)
+    fun seekTo(positionMs: Long) {
+        resetFullSentenceBacktracking()
+        playerController.seekTo(positionMs)
+    }
 
     fun dismissSentenceOverlay() {
+        activeTriggerJob?.cancel()
+        resetFullSentenceBacktracking()
         hebrewSpeaker.stop()
-        resumeIfNotQuizzing()
+        // Must clear resolvedSentenceText/isTranslating *before* resumeIfNotQuizzing() below -
+        // PlaybackService treats any resume attempt while they're still set as "show the previous
+        // sentence" (see translationOverlayActive), so resuming first would immediately walk back
+        // a sentence right after a plain dismiss.
         _uiState.update { current ->
             if (current is PlayerScreenState.Ready) {
                 current.copy(
@@ -315,6 +484,7 @@ class PlayerViewModel @Inject constructor(
                 current
             }
         }
+        resumeIfNotQuizzing()
     }
 
     private suspend fun loadEpisode() {
@@ -361,12 +531,26 @@ class PlayerViewModel @Inject constructor(
             _uiState.value = PlayerScreenState.Failed("Downloaded audio file is missing")
             return
         }
+        // Must be checked before prepare() - prepare() itself no-ops (and leaves whatever was
+        // already playing alone) when this episode is already the loaded one, which is exactly
+        // the "not a fresh start" case the start quiz should never re-offer mid-playthrough.
+        val isFreshStart = playerController.playerState.value.episodeId != episode.id
+        val words = transcriptRepository.getWordTimings(episode.id).also { cachedWords = it }
+        val startQuizTiers = if (isFreshStart && !episode.startQuizCompleted) {
+            computeUnknownWordTiers(words)
+        } else {
+            emptyList()
+        }
+        val promptStartQuiz = startQuizTiers.isNotEmpty()
+        pendingStartQuizTiers = startQuizTiers
+
         val artworkUrl = podcastRepository.getPodcast(episode.podcastId)?.imageUrl
-        playerController.prepare(episode.id, episode.title, artworkUrl, localFilePath)
+        // autoPlay=false when the start-quiz prompt is about to show - otherwise the episode would
+        // audibly start for a moment before the prompt/pause below catches up to it.
+        playerController.prepare(episode.id, episode.title, artworkUrl, localFilePath, autoPlay = !promptStartQuiz)
         val podcastEpisodes = podcastRepository.getEpisodes(episode.podcastId).first()
         val currentIndex = podcastEpisodes.indexOfFirst { it.id == episode.id }
         nextEpisodeId = if (currentIndex == -1) null else podcastEpisodes.getOrNull(currentIndex + 1)?.id
-        val words = transcriptRepository.getWordTimings(episode.id).also { cachedWords = it }
         val sentences = transcriptRepository.getSentences(episode.id)
         _uiState.value = PlayerScreenState.Ready(
             episodeId = episode.id,
@@ -378,6 +562,8 @@ class PlayerViewModel @Inject constructor(
             words = words,
             hardWordModeEnabled = settingsRepository.hardWordModeEnabled.value,
             autoTranslateEnabled = settingsRepository.autoTranslateEnabled.value,
+            showSentenceTranslationsEnabled = settingsRepository.showSentenceTranslationsEnabled.value,
+            startQuizPrompt = promptStartQuiz,
         )
         podcastRepository.recordEpisodePlayed(episode.id)
         // A fresh episode brings its own hardest words - if auto-translate is already on and this
@@ -404,10 +590,18 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { current ->
             if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
         }
-        viewModelScope.launch {
+        activeTriggerJob?.cancel()
+        activeTriggerJob = viewModelScope.launch {
             val words = cachedWords ?: transcriptRepository.getWordTimings(episodeId).also { cachedWords = it }
             val effectiveTimeMs = pauseTimeMs - AppDefaults.REACTION_DELAY_MS
-            when (val resolution = SentenceResolver.resolve(pauseTimeMs, AppDefaults.REACTION_DELAY_MS, words)) {
+            when (
+                val resolution = SentenceResolver.resolve(
+                    pauseTimeMs,
+                    AppDefaults.REACTION_DELAY_MS,
+                    words,
+                    sentenceStartGraceMs = AppDefaults.SENTENCE_START_GRACE_MS,
+                )
+            ) {
                 is SentenceResolution.Resolved -> {
                     val sentence = transcriptRepository.getSentence(resolution.sentenceId)
                     if (sentence == null) {
@@ -434,18 +628,17 @@ class PlayerViewModel @Inject constructor(
                         // Leaving hard-word mode's per-sentence progression - restart clean if
                         // it's ever re-entered on this sentence.
                         hardWordSentenceId = null
-                        _uiState.update { current ->
-                            if (current !is PlayerScreenState.Ready) return@update current
-                            current.copy(
-                                resolvedSentenceText = sentence.fullText,
-                                translatedSentenceText = null,
-                                isTranslating = true,
-                                noRelevantSentence = false,
-                                activeSentenceId = sentence.id,
-                                activeWord = null,
-                            )
+                        // Resolving to the same sentence as the last trigger means no real playback
+                        // has happened since - the user isn't asking to hear that sentence again,
+                        // they're asking for something earlier (see anchorFullSentenceId).
+                        val sameAnchorAsLastTrigger = resolution.sentenceId == anchorFullSentenceId
+                        anchorFullSentenceId = resolution.sentenceId
+                        val target = if (sameAnchorAsLastTrigger) {
+                            previousFullSentence(lastShownFullSentenceId) ?: sentence
+                        } else {
+                            sentence
                         }
-                        translateAndSpeak(sentence.fullText)
+                        showFullSentenceTranslation(target)
                     }
                 }
                 SentenceResolution.NoRelevantSentence -> {
@@ -467,6 +660,65 @@ class PlayerViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Full-sentence mode only (see [togglePlayPause]): retriggering while a sentence's translation
+     * is still being read, or immediately after, means "I wanted the sentence before that one" -
+     * cancels whatever is currently being fetched/narrated and shows [lastShownFullSentenceId]'s
+     * predecessor instead. Each further retrigger before any real playback happens keeps walking
+     * back one more sentence, since it updates [lastShownFullSentenceId] the same way a fresh
+     * trigger would.
+     */
+    private fun showPreviousFullSentence() {
+        val target = previousFullSentence(lastShownFullSentenceId) ?: return
+        activeTriggerJob?.cancel()
+        hebrewSpeaker.stop()
+        activeTriggerJob = viewModelScope.launch { showFullSentenceTranslation(target) }
+    }
+
+    private fun previousFullSentence(sentenceId: String?): SentenceEntity? {
+        val state = _uiState.value as? PlayerScreenState.Ready ?: return null
+        val index = state.sentences.indexOfFirst { it.id == sentenceId }
+        if (index <= 0) return null
+        return state.sentences[index - 1]
+    }
+
+    private suspend fun showFullSentenceTranslation(sentence: SentenceEntity) {
+        lastShownFullSentenceId = sentence.id
+        _uiState.update { current ->
+            if (current !is PlayerScreenState.Ready) return@update current
+            current.copy(
+                resolvedSentenceText = sentence.fullText,
+                translatedSentenceText = null,
+                isTranslating = true,
+                noRelevantSentence = false,
+                activeSentenceId = sentence.id,
+                activeWord = null,
+            )
+        }
+        translateAndSpeak(sentence.fullText, speakEnglishFirst = true) {
+            translateSentenceCached(sentence.id, sentence.fullText)
+        }
+    }
+
+    /**
+     * Reuses the always-on under-transcript translation ([PlayerScreenState.Ready.sentenceTranslations],
+     * filled in by [ensureSentenceTranslation]) instead of re-fetching it for the trigger overlay
+     * when it's already sitting there - and vice versa, caches a fresh fetch here so a later scroll
+     * into view doesn't re-fetch it either.
+     */
+    private suspend fun translateSentenceCached(sentenceId: String, sentenceText: String): String? {
+        val cached = (_uiState.value as? PlayerScreenState.Ready)?.sentenceTranslations?.get(sentenceId)
+        if (cached != null) return cached
+        val translated = translationRepository.translateToHebrew(sentenceText).getOrNull()
+        if (translated != null) {
+            _uiState.update { current ->
+                if (current !is PlayerScreenState.Ready) return@update current
+                current.copy(sentenceTranslations = current.sentenceTranslations + (sentenceId to translated))
+            }
+        }
+        return translated
     }
 
     /**
@@ -529,7 +781,9 @@ class PlayerViewModel @Inject constructor(
                     activeWord = null,
                 )
             }
-            translateAndSpeak(sentenceText)
+            translateAndSpeak(sentenceText, speakEnglishFirst = true) {
+                translateSentenceCached(sentenceId, sentenceText)
+            }
             return
         }
 
@@ -588,10 +842,13 @@ class PlayerViewModel @Inject constructor(
             // timeout a dropped callback would leave the episode paused forever.
             withTimeoutOrNull(AppDefaults.TTS_WAIT_TIMEOUT_MS) { hebrewSpeaker.speak(translated) }
         }
-        resumeIfNotQuizzing()
         // Auto-close the translation panel once its narration has actually finished, so it
         // doesn't linger over the transcript after there's nothing left to read - unless a
         // newer trigger (or a manual dismiss) already took over while this one was speaking.
+        // This must happen *before* resumeIfNotQuizzing() below: PlaybackService treats any
+        // resume attempt while resolvedSentenceText is still set as "show the previous sentence"
+        // (see translationOverlayActive) - resuming first would immediately walk back a sentence
+        // with no actual retrigger from the user.
         _uiState.update { current ->
             if (current !is PlayerScreenState.Ready || current.resolvedSentenceText != englishText) {
                 return@update current
@@ -605,6 +862,7 @@ class PlayerViewModel @Inject constructor(
                 activeWord = null,
             )
         }
+        resumeIfNotQuizzing()
     }
 
     // --- Vocabulary trainer: calibration ---------------------------------------------------
@@ -662,6 +920,50 @@ class PlayerViewModel @Inject constructor(
             if (current is PlayerScreenState.Ready) current.copy(vocabCalibration = null) else current
         }
         refreshUnknownWordOccurrences()
+    }
+
+    // --- Vocabulary trainer: pre-episode start quiz -----------------------------------------
+
+    /** This episode's still-unknown words only, grouped the same way as calibration (hardest tier first) - empty tiers are dropped, so an empty overall result means nothing to quiz on. */
+    private suspend fun computeUnknownWordTiers(words: List<WordTiming>): List<List<String>> {
+        val deduped = words.distinctBy { WordNormalizer.normalize(it.word) }
+        val statuses = wordKnowledgeRepository.getStatuses(deduped.map { it.word })
+        val unknown = deduped.filter { statuses[WordNormalizer.normalize(it.word)]?.status == WordKnowledgeStatus.UNKNOWN }
+        if (unknown.isEmpty()) return emptyList()
+        val tiers = computeDifficultyTiers(unknown)
+        return tiers.keys.sortedDescending().map { rank -> tiers.getValue(rank).map { it.word } }
+    }
+
+    fun onStartQuizPromptAnswer(startQuiz: Boolean) {
+        _uiState.update { current ->
+            if (current is PlayerScreenState.Ready) current.copy(startQuizPrompt = false) else current
+        }
+        if (!startQuiz) {
+            playerController.play()
+            return
+        }
+        viewModelScope.launch { beginStartQuiz() }
+    }
+
+    /** Builds the hardest remaining tier's questions and opens the quiz on them, skipping past any tier that yields none (e.g. not enough real wrong-answer options exist yet) - if every tier comes up empty, there's nothing to quiz on, so just start playing. */
+    private suspend fun beginStartQuiz() {
+        var tiers = pendingStartQuizTiers
+        while (tiers.isNotEmpty()) {
+            val tierWords = tiers.first()
+            val remaining = tiers.drop(1)
+            val questions = vocabQuizBuilder.buildQuizQuestions(tierWords)
+            if (questions.isNotEmpty()) {
+                _uiState.update { current ->
+                    if (current !is PlayerScreenState.Ready) return@update current
+                    current.copy(
+                        quiz = VocabQuizState(questions = questions, autoAdvance = true, remainingTiers = remaining),
+                    )
+                }
+                return
+            }
+            tiers = remaining
+        }
+        playerController.play()
     }
 
     // --- Vocabulary trainer: silent in-playback popup ---------------------------------------
@@ -723,8 +1025,8 @@ class PlayerViewModel @Inject constructor(
      * overlay/TTS path the manual trigger uses, instead of the silent banner. Hard-word mode
      * restricts this to just the unknown word (English then Hebrew, using the word-knowledge
      * cache so a word already looked up never costs a second OpenAI call); otherwise the whole
-     * sentence it appears in is read (Hebrew only, same as the manual trigger's own sentence
-     * mode - sentence translations aren't cached, matching existing trigger behavior).
+     * sentence it appears in is read (English then Hebrew, same as the manual trigger's own
+     * sentence mode - sentence translations aren't cached, matching existing trigger behavior).
      */
     private suspend fun speakAutoTranslatedWord(occurrence: WordTiming) {
         playerController.pause()
@@ -762,7 +1064,7 @@ class PlayerViewModel @Inject constructor(
                     activeWord = null,
                 )
             }
-            translateAndSpeak(sentence.fullText)
+            translateAndSpeak(sentence.fullText, speakEnglishFirst = true)
         }
     }
 
@@ -777,5 +1079,9 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         hebrewSpeaker.stop()
+        // TriggerEventBus is app-scoped, not tied to this ViewModel's lifecycle - clear the flag
+        // explicitly so leaving the Player screen mid-overlay can't strand it stuck true, which
+        // would silently break resuming playback from any source until the app restarts.
+        playerController.setTranslationOverlayActive(false)
     }
 }
