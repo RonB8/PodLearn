@@ -32,6 +32,19 @@ class TriggerEventBus @Inject constructor() {
     @Volatile
     var translationOverlayActive: Boolean = false
 
+    /**
+     * True while the app itself is pausing/resuming playback for its own reasons - currently only
+     * auto-translate's read-aloud narration ([com.example.podlingo.ui.player.PlayerViewModel] and
+     * [com.example.podlingo.ui.player.NowPlayingViewModel]'s `speakAutoTranslatedWord`) - rather
+     * than the user actually pressing pause/play. [PlaybackService]'s `MediaSession.Callback` can't
+     * otherwise tell the two apart, since both route through the same play/pause command channel:
+     * without this, a narration that happens to finish within the trigger's own pause-then-quick-
+     * resume window gets misread as the user triggering a fresh translation, on top of the one
+     * auto-translate just read.
+     */
+    @Volatile
+    var suppressTriggerDetection: Boolean = false
+
     fun emit(trigger: TriggerResult.Triggered) {
         _events.tryEmit(trigger)
     }

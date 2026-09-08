@@ -1046,42 +1046,53 @@ class PlayerViewModel @Inject constructor(
      * sentence mode - sentence translations aren't cached, matching existing trigger behavior).
      */
     private suspend fun speakAutoTranslatedWord(occurrence: WordTiming) {
-        playerController.pause()
-        _uiState.update { current ->
-            if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
-        }
-        if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
-            val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
+        // The pause below, and the eventual resume at the end of translateAndSpeak(), are both the
+        // app's own doing - not a user gesture - but PlaybackService's MediaSession callback can't
+        // tell the difference on its own (see TriggerEventBus.suppressTriggerDetection). Without
+        // this, a narration that finishes quickly (a short word, fast TTS) can land inside the
+        // trigger's own pause-then-quick-resume window and get misread as the user triggering a
+        // fresh translation on top of the one auto-translate just read.
+        playerController.setSuppressTriggerDetection(true)
+        try {
+            playerController.pause()
             _uiState.update { current ->
-                if (current !is PlayerScreenState.Ready) return@update current
-                current.copy(
-                    resolvedSentenceText = word,
-                    translatedSentenceText = null,
-                    isTranslating = true,
-                    noRelevantSentence = false,
-                    activeSentenceId = occurrence.sentenceId,
-                    activeWord = word,
-                )
+                if (current is PlayerScreenState.Ready) current.copy(transcriptVisible = true) else current
             }
-            translateAndSpeak(word, speakEnglishFirst = true) { wordKnowledgeRepository.getOrFetchTranslation(word) }
-        } else {
-            val sentence = transcriptRepository.getSentence(occurrence.sentenceId)
-            if (sentence == null) {
-                resumeIfNotQuizzing()
-                return
+            if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
+                val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
+                _uiState.update { current ->
+                    if (current !is PlayerScreenState.Ready) return@update current
+                    current.copy(
+                        resolvedSentenceText = word,
+                        translatedSentenceText = null,
+                        isTranslating = true,
+                        noRelevantSentence = false,
+                        activeSentenceId = occurrence.sentenceId,
+                        activeWord = word,
+                    )
+                }
+                translateAndSpeak(word, speakEnglishFirst = true) { wordKnowledgeRepository.getOrFetchTranslation(word) }
+            } else {
+                val sentence = transcriptRepository.getSentence(occurrence.sentenceId)
+                if (sentence == null) {
+                    resumeIfNotQuizzing()
+                    return
+                }
+                _uiState.update { current ->
+                    if (current !is PlayerScreenState.Ready) return@update current
+                    current.copy(
+                        resolvedSentenceText = sentence.fullText,
+                        translatedSentenceText = null,
+                        isTranslating = true,
+                        noRelevantSentence = false,
+                        activeSentenceId = sentence.id,
+                        activeWord = null,
+                    )
+                }
+                translateAndSpeak(sentence.fullText, speakEnglishFirst = true)
             }
-            _uiState.update { current ->
-                if (current !is PlayerScreenState.Ready) return@update current
-                current.copy(
-                    resolvedSentenceText = sentence.fullText,
-                    translatedSentenceText = null,
-                    isTranslating = true,
-                    noRelevantSentence = false,
-                    activeSentenceId = sentence.id,
-                    activeWord = null,
-                )
-            }
-            translateAndSpeak(sentence.fullText, speakEnglishFirst = true)
+        } finally {
+            playerController.setSuppressTriggerDetection(false)
         }
     }
 

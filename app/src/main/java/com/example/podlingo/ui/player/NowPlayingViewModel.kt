@@ -155,22 +155,32 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     private suspend fun speakAutoTranslatedWord(occurrence: WordTiming) {
-        playerController.pause()
-        if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
-            val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
-            val translation = wordKnowledgeRepository.getOrFetchTranslation(word)
-            speakEnglishThenHebrew(word, translation)
-        } else {
-            val sentence = transcriptRepository.getSentence(occurrence.sentenceId) ?: run {
-                playerController.resume()
-                return
+        // The pause/resume around this narration are the app's own doing, not a user gesture, but
+        // PlaybackService's MediaSession callback can't otherwise tell the difference - see
+        // TriggerEventBus.suppressTriggerDetection. Without this, a narration that finishes
+        // quickly can land inside the trigger's own pause-then-quick-resume window and get misread
+        // as the user triggering a fresh (full-sentence, since this isn't the trigger's own
+        // hard-word setting) translation on top of the one just read.
+        playerController.setSuppressTriggerDetection(true)
+        try {
+            playerController.pause()
+            if (settingsRepository.hardWordModeAutoTranslateEnabled.value) {
+                val word = occurrence.word.trim { !it.isLetterOrDigit() && it != '\'' && it != '-' }
+                val translation = wordKnowledgeRepository.getOrFetchTranslation(word)
+                speakEnglishThenHebrew(word, translation)
+            } else {
+                val sentence = transcriptRepository.getSentence(occurrence.sentenceId)
+                if (sentence != null) {
+                    val translation = translationRepository.translateToHebrew(sentence.fullText).getOrNull()
+                    speakEnglishThenHebrew(sentence.fullText, translation)
+                }
             }
-            val translation = translationRepository.translateToHebrew(sentence.fullText).getOrNull()
-            speakEnglishThenHebrew(sentence.fullText, translation)
+            // No quiz overlay can be showing while the mini-player is active (it only ever renders
+            // inside the full Player screen), so resuming unconditionally is safe here.
+            playerController.resume()
+        } finally {
+            playerController.setSuppressTriggerDetection(false)
         }
-        // No quiz overlay can be showing while the mini-player is active (it only ever renders
-        // inside the full Player screen), so resuming unconditionally is safe here.
-        playerController.resume()
     }
 
     private suspend fun speakEnglishThenHebrew(englishText: String, translated: String?) {

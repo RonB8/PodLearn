@@ -85,6 +85,13 @@ class PlaybackService : MediaSessionService() {
             if (playerCommand != Player.COMMAND_PLAY_PAUSE) return SessionResult.RESULT_SUCCESS
             val player = session.player
 
+            if (triggerEventBus.suppressTriggerDetection) {
+                // The app itself is pausing/resuming for its own reasons (auto-translate's own
+                // narration) - let it through as a plain command, with no trigger-detection side
+                // effects either way.
+                return SessionResult.RESULT_SUCCESS
+            }
+
             if (player.isPlaying) {
                 triggerDetector.onPause(SystemClock.elapsedRealtime(), player.currentPosition)
                 return SessionResult.RESULT_SUCCESS

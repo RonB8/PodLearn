@@ -73,6 +73,11 @@ class PlayerController @Inject constructor(
         triggerEventBus.translationOverlayActive = active
     }
 
+    /** See [TriggerEventBus.suppressTriggerDetection]. */
+    fun setSuppressTriggerDetection(suppress: Boolean) {
+        triggerEventBus.suppressTriggerDetection = suppress
+    }
+
     private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
