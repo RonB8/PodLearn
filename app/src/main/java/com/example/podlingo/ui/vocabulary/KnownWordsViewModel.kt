@@ -12,23 +12,23 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @HiltViewModel
-class UnknownWordsViewModel @Inject constructor(
+class KnownWordsViewModel @Inject constructor(
     private val wordKnowledgeRepository: WordKnowledgeRepository,
 ) : VocabWordListViewModel(wordKnowledgeRepository) {
 
-    val unknownWords: StateFlow<List<WordKnowledgeEntity>> =
-        wordKnowledgeRepository.observeUnknownWords()
+    val knownWords: StateFlow<List<WordKnowledgeEntity>> =
+        wordKnowledgeRepository.observeKnownWords()
             .onEach { translationFetcher.fetchMissing(it) }
             .sortedForVocabList(sortModeFlow)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Removing a word from this list means "I know it now" - it stops auto-translating and (like any known word) is never asked about again in calibration. */
-    fun markKnown(word: String) {
-        viewModelScope.launch { wordKnowledgeRepository.markKnown(word) }
+    /** Removing a word from this list means "I don't know it anymore" - it starts auto-translating again, same as any freshly-flagged word. */
+    fun markUnknown(word: String) {
+        viewModelScope.launch { wordKnowledgeRepository.markUnknown(word) }
     }
 
-    /** Manually flags a word without waiting for it to come up in playback/calibration/a quiz. */
+    /** Manually flags a word without waiting for it to come up in a quiz/calibration. */
     fun addWord(word: String) {
-        viewModelScope.launch { wordKnowledgeRepository.markUnknown(word) }
+        viewModelScope.launch { wordKnowledgeRepository.markKnown(word) }
     }
 }

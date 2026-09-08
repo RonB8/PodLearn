@@ -54,6 +54,8 @@ interface AppStrings {
     val hardWordModeAutoTranslateDescription: String
     val unknownWordsTitle: String
     val unknownWordsDescription: String
+    val knownWordsSettingsTitle: String
+    val knownWordsSettingsDescription: String
     fun aboutContentDescription(settingTitle: String): String
     val storageTitle: String
     fun storageUsageLabel(usedText: String, limitText: String): String
@@ -130,6 +132,21 @@ interface AppStrings {
     val wordsYouDontKnowTitle: String
     val noUnknownWordsYet: String
     val iKnowThisWordNowContentDescription: String
+    val wordsYouKnowTitle: String
+    val noKnownWordsYet: String
+    val iDontKnowThisWordAnymoreContentDescription: String
+    val sortMenuContentDescription: String
+    val sortByAlphabetical: String
+    val sortByLastAdded: String
+    val searchWordsLabel: String
+    val clearSearchContentDescription: String
+    val noWordsMatchSearch: String
+    val deleteAllContentDescription: String
+    val deleteAllConfirmTitle: String
+    fun deleteAllConfirmText(count: Int): String
+    val addWordContentDescription: String
+    val addWordDialogTitle: String
+    val wordFieldLabel: String
 
     // Player
     val episodeFallbackTitle: String
@@ -215,6 +232,8 @@ object EnglishStrings : AppStrings {
         "hard-word setting above."
     override val unknownWordsTitle = "Words you don't know"
     override val unknownWordsDescription = "View and edit the words flagged for auto-translation."
+    override val knownWordsSettingsTitle = "Words you know"
+    override val knownWordsSettingsDescription = "View the words you've marked as known."
     override fun aboutContentDescription(settingTitle: String) = "About $settingTitle"
     override val storageTitle = "Downloaded episode storage"
     override fun storageUsageLabel(usedText: String, limitText: String) = "$usedText of $limitText used"
@@ -289,6 +308,23 @@ object EnglishStrings : AppStrings {
     override val noUnknownWordsYet = "No unknown words yet. Mark words in the player's \"Auto translate\" " +
         "panel and they'll show up here."
     override val iKnowThisWordNowContentDescription = "I know this word now"
+    override val wordsYouKnowTitle = "Words you know"
+    override val noKnownWordsYet = "No known words yet. Words you don't flag during calibration, or answer " +
+        "correctly in a quiz, will show up here."
+    override val iDontKnowThisWordAnymoreContentDescription = "I don't know this word anymore"
+    override val sortMenuContentDescription = "Sort"
+    override val sortByAlphabetical = "Alphabetical"
+    override val sortByLastAdded = "Last added"
+    override val searchWordsLabel = "Search words"
+    override val clearSearchContentDescription = "Clear search"
+    override val noWordsMatchSearch = "No words match your search."
+    override val deleteAllContentDescription = "Delete all"
+    override val deleteAllConfirmTitle = "Delete these words?"
+    override fun deleteAllConfirmText(count: Int) =
+        "This will permanently delete $count word${if (count == 1) "" else "s"} and their cached translations. This can't be undone."
+    override val addWordContentDescription = "Add word"
+    override val addWordDialogTitle = "Add a word"
+    override val wordFieldLabel = "Word"
 
     override val episodeFallbackTitle = "Episode"
     override val downloadingEpisode = "Downloading episode..."
@@ -370,6 +406,8 @@ object HebrewStrings : AppStrings {
         "מוכרת המסומנת במקום המשפט השלם. הגדרה זו נפרדת מהגדרת המילה הקשה של ההפעלה הידנית שמופיעה למעלה."
     override val unknownWordsTitle = "מילים שאינך מכיר/ה"
     override val unknownWordsDescription = "צפייה ועריכה של המילים המסומנות לתרגום אוטומטי."
+    override val knownWordsSettingsTitle = "מילים שאתה מכיר/ה"
+    override val knownWordsSettingsDescription = "צפייה במילים שסימנת כמוכרות."
     override fun aboutContentDescription(settingTitle: String) = "מידע על $settingTitle"
     override val storageTitle = "אחסון פרקים שהורדו"
     override fun storageUsageLabel(usedText: String, limitText: String) = "$usedText מתוך $limitText בשימוש"
@@ -444,6 +482,23 @@ object HebrewStrings : AppStrings {
     override val noUnknownWordsYet = "עדיין אין מילים לא מוכרות. יש לסמן מילים בפאנל \"תרגום אוטומטי\" " +
         "בנגן והן יופיעו כאן."
     override val iKnowThisWordNowContentDescription = "אני מכיר/ה את המילה הזו עכשיו"
+    override val wordsYouKnowTitle = "מילים שאתה מכיר/ה"
+    override val noKnownWordsYet = "עדיין אין מילים מוכרות. מילים שלא תסמן/י בכיול או שתענה/י " +
+        "עליהן נכון בחידון יופיעו כאן."
+    override val iDontKnowThisWordAnymoreContentDescription = "אני כבר לא מכיר/ה את המילה הזו"
+    override val sortMenuContentDescription = "מיון"
+    override val sortByAlphabetical = "אלפביתי"
+    override val sortByLastAdded = "נוספו לאחרונה"
+    override val searchWordsLabel = "חיפוש מילים"
+    override val clearSearchContentDescription = "ניקוי חיפוש"
+    override val noWordsMatchSearch = "אין מילים התואמות לחיפוש."
+    override val deleteAllContentDescription = "מחיקת הכול"
+    override val deleteAllConfirmTitle = "למחוק את המילים האלה?"
+    override fun deleteAllConfirmText(count: Int) =
+        "הפעולה תמחק לצמיתות $count מילים ואת התרגומים השמורים שלהן. לא ניתן לבטל פעולה זו."
+    override val addWordContentDescription = "הוספת מילה"
+    override val addWordDialogTitle = "הוספת מילה"
+    override val wordFieldLabel = "מילה"
 
     override val episodeFallbackTitle = "פרק"
     override val downloadingEpisode = "מוריד את הפרק..."

@@ -35,6 +35,7 @@ import com.example.podlingo.ui.player.PlayerScreen
 import com.example.podlingo.ui.player.TranslationPopupBanner
 import com.example.podlingo.ui.playlists.PlaylistDetailScreen
 import com.example.podlingo.ui.settings.SettingsScreen
+import com.example.podlingo.ui.vocabulary.KnownWordsScreen
 import com.example.podlingo.ui.vocabulary.UnknownWordsScreen
 
 /** Argument-free top-level screens worth restoring to on a cold start (see [AppNavigationViewModel]). */
@@ -154,10 +155,14 @@ fun PodLingoNavHost(navController: NavHostController = rememberNavController()) 
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenUnknownWords = { navController.navigate(Routes.UNKNOWN_WORDS) { launchSingleTop = true } },
+                    onOpenKnownWords = { navController.navigate(Routes.KNOWN_WORDS) { launchSingleTop = true } },
                 )
             }
             composable(Routes.UNKNOWN_WORDS) {
                 UnknownWordsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.KNOWN_WORDS) {
+                KnownWordsScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = Routes.PLAYLIST_DETAIL,

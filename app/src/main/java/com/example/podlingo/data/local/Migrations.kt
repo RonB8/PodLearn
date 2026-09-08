@@ -53,3 +53,11 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         db.execSQL("ALTER TABLE episodes ADD COLUMN startQuizCompleted INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+/** Adds a dedicated "added to the unknown-words list" timestamp, separate from updatedAtEpochMs (which also gets bumped by a plain translation fetch) so the Settings list can sort by last added. Existing rows backfill from their current updatedAtEpochMs. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE word_knowledge ADD COLUMN addedAtEpochMs INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE word_knowledge SET addedAtEpochMs = updatedAtEpochMs")
+    }
+}

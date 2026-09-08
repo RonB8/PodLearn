@@ -50,6 +50,7 @@ import com.example.podlingo.ui.strings.LocalAppStrings
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenUnknownWords: () -> Unit,
+    onOpenKnownWords: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val strings = LocalAppStrings.current
@@ -61,6 +62,7 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val unknownWordCount by viewModel.unknownWordCount.collectAsStateWithLifecycle()
+    val knownWordCount by viewModel.knownWordCount.collectAsStateWithLifecycle()
     val storageLimitBytes by viewModel.storageLimitBytes.collectAsStateWithLifecycle()
     val storageUsedBytes by viewModel.storageUsedBytes.collectAsStateWithLifecycle()
 
@@ -145,6 +147,17 @@ fun SettingsScreen(
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(unknownWordCount.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = null)
+                    }
+                },
+            )
+            ListItem(
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenKnownWords),
+                headlineContent = { Text(strings.knownWordsSettingsTitle) },
+                supportingContent = { Text(strings.knownWordsSettingsDescription) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(knownWordCount.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = null)
                     }
                 },

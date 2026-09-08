@@ -28,6 +28,10 @@ class SettingsViewModel @Inject constructor(
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val knownWordCount: StateFlow<Int> = wordKnowledgeRepository.observeKnownWords()
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     val hardWordModeTriggerEnabled: StateFlow<Boolean> = settingsRepository.hardWordModeTriggerEnabled
 
     fun setHardWordModeTriggerEnabled(enabled: Boolean) {

@@ -37,13 +37,23 @@ class WordKnowledgeRepository @Inject constructor(
         val normalized = WordNormalizer.normalize(word)
         if (normalized.isEmpty()) return
         val existing = dao.getByWords(listOf(normalized)).firstOrNull()
+        val now = System.currentTimeMillis()
+        // Only a real KNOWN -> UNKNOWN (or brand-new) transition counts as "added" - re-affirming
+        // an already-unknown word (e.g. a repeat wrong quiz answer) shouldn't bump its place in the
+        // last-added sort.
+        val addedAt = if (status == WordKnowledgeStatus.UNKNOWN && existing?.status != WordKnowledgeStatus.UNKNOWN) {
+            now
+        } else {
+            existing?.addedAtEpochMs ?: now
+        }
         dao.upsertAll(
             listOf(
                 WordKnowledgeEntity(
                     word = normalized,
                     status = status,
                     hebrewTranslation = existing?.hebrewTranslation,
-                    updatedAtEpochMs = System.currentTimeMillis(),
+                    updatedAtEpochMs = now,
+                    addedAtEpochMs = addedAt,
                 ),
             ),
         )
@@ -64,6 +74,7 @@ class WordKnowledgeRepository @Inject constructor(
                     status = existing?.status ?: WordKnowledgeStatus.UNKNOWN,
                     hebrewTranslation = translated,
                     updatedAtEpochMs = System.currentTimeMillis(),
+                    addedAtEpochMs = existing?.addedAtEpochMs ?: System.currentTimeMillis(),
                 ),
             ),
         )
@@ -73,6 +84,16 @@ class WordKnowledgeRepository @Inject constructor(
     suspend fun sampleDistractors(word: String, count: Int): List<String> =
         dao.sampleRandomTranslations(WordNormalizer.normalize(word), count)
 
+    /** Permanently forgets these words - both status and any cached translation are cleared, so they can be asked about again in future calibration/quizzes. */
+    suspend fun deleteWords(words: Collection<String>) {
+        val normalized = words.map(WordNormalizer::normalize).distinct()
+        if (normalized.isEmpty()) return
+        dao.deleteByWords(normalized)
+    }
+
     /** For the Settings "words you don't know" list. */
     fun observeUnknownWords(): Flow<List<WordKnowledgeEntity>> = dao.getUnknownWordsFlow()
+
+    /** For the Settings "words you know" list. */
+    fun observeKnownWords(): Flow<List<WordKnowledgeEntity>> = dao.getKnownWordsFlow()
 }

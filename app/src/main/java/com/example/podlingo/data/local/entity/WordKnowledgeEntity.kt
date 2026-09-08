@@ -21,4 +21,6 @@ data class WordKnowledgeEntity(
     /** Filled lazily the first time this word is actually needed (playback popup or quiz) - cached forever after that. */
     val hebrewTranslation: String? = null,
     val updatedAtEpochMs: Long,
+    /** When the word most recently transitioned into UNKNOWN - distinct from [updatedAtEpochMs] so a translation fetch doesn't masquerade as a re-add for "last added" sorting. */
+    val addedAtEpochMs: Long,
 )

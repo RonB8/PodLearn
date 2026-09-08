@@ -17,8 +17,16 @@ interface WordKnowledgeDao {
     @Query("SELECT * FROM word_knowledge WHERE status = 'UNKNOWN' ORDER BY word ASC")
     fun getUnknownWordsFlow(): Flow<List<WordKnowledgeEntity>>
 
+    /** For the Settings "words you know" list - alphabetical so it's scannable/editable. */
+    @Query("SELECT * FROM word_knowledge WHERE status = 'KNOWN' ORDER BY word ASC")
+    fun getKnownWordsFlow(): Flow<List<WordKnowledgeEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<WordKnowledgeEntity>)
+
+    /** Permanently forgets these words - status and cached translation both gone. */
+    @Query("DELETE FROM word_knowledge WHERE word IN (:words)")
+    suspend fun deleteByWords(words: List<String>)
 
     /** Wrong-answer pool for the end-of-episode quiz - real translations of other words the user has already looked up. */
     @Query(
